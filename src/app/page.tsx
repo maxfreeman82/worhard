@@ -1,14 +1,16 @@
-import Link from "next/link";
+"use client";
 
-// Remplacée par l'app (connexion → espace de travail) dans /replica-build.
-export default function Home() {
-  return (
-    <main className="mx-auto flex min-h-full max-w-[708px] flex-col justify-center gap-3 px-6">
-      <h1 className="text-title font-bold">Espace de travail</h1>
-      <p className="text-muted">L&apos;app arrive. En attendant, le système de design :</p>
-      <Link href="/design" className="text-accent underline underline-offset-2">
-        Voir les composants
-      </Link>
-    </main>
-  );
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useSession } from "@/lib/data";
+
+// La session vit dans le navigateur : la redirection se fait côté client.
+export default function Root() {
+  const session = useSession();
+  const router = useRouter();
+  useEffect(() => {
+    if (session === undefined) return;
+    router.replace(!session.profile ? "/login" : session.workspace ? "/home" : "/onboarding");
+  }, [session, router]);
+  return null;
 }

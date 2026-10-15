@@ -117,3 +117,18 @@ body {
     transition-duration: 1ms !important;
   }
 }
+
+/* Éditeur de blocs : hérite de la police de la page (défaut / serif / mono) et des tokens. */
+.page-editor .bn-editor {
+  font-family: inherit;
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  background: transparent;
+}
+.page-small .page-editor .bn-editor {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-sm);
+}
+.page-editor .bn-block-content[data-content-type="heading"] {
+  font-weight: 600;
+}
