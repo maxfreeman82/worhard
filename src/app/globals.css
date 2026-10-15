@@ -84,37 +84,40 @@
   --ease-out: var(--motion-ease);
 }
 
-html,
-body {
-  height: 100%;
-}
+/* Styles de base dans @layer base : les utilitaires Tailwind (ex. outline-none) peuvent les surcharger. */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
 
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--ff-sans);
-  font-size: var(--fs-base);
-  line-height: var(--lh-base);
-  -webkit-font-smoothing: antialiased;
-}
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--ff-sans);
+    font-size: var(--fs-base);
+    line-height: var(--lh-base);
+    -webkit-font-smoothing: antialiased;
+  }
 
-::selection {
-  background: var(--selection);
-}
+  ::selection {
+    background: var(--selection);
+  }
 
-/* Un seul anneau de focus pour toute l'app, visible au clavier uniquement. */
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  border-radius: var(--r-sm);
-}
+  /* Un seul anneau de focus pour toute l'app, visible au clavier uniquement. */
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: var(--r-sm);
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 1ms !important;
-    transition-duration: 1ms !important;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      transition-duration: 1ms !important;
+    }
   }
 }
 
@@ -131,4 +134,15 @@ body {
 }
 .page-editor .bn-block-content[data-content-type="heading"] {
   font-weight: 600;
+}
+/* Titres : échelle des tokens (h1 30, h2 24, h3 20 pour un texte de 16), en em pour suivre le « petit texte ». */
+.page-editor [data-content-type="heading"] {
+  --level: 1.875em;
+  padding-top: 1em;
+}
+.page-editor [data-content-type="heading"][data-level="2"] {
+  --level: 1.5em;
+}
+.page-editor [data-content-type="heading"][data-level="3"] {
+  --level: 1.25em;
 }

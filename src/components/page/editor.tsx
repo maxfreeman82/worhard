@@ -141,7 +141,11 @@ export function PageEditor({
         onItemClick: () => insertOrUpdateBlockForSlashMenu(editor, { type: "callout" }),
       },
     ];
-    return filterSuggestionItems([...getDefaultReactSlashMenuItems(editor), ...custom], q);
+    // Les blocs ajoutés rejoignent le groupe « Blocs de base » existant (sinon il apparaît deux fois).
+    const items = getDefaultReactSlashMenuItems(editor);
+    const lastBasic = items.findLastIndex((i) => i.group === "Blocs de base");
+    items.splice(lastBasic + 1, 0, ...custom);
+    return filterSuggestionItems(items, q);
   };
 
   return (
