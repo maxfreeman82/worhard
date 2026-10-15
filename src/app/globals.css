@@ -1,0 +1,119 @@
+@import "tailwindcss";
+@import "../styles/tokens.css";
+
+/* Thème Tailwind = tokens uniquement. Les palettes par défaut sont retirées pour
+   qu'aucun composant n'utilise de couleur brute : bg-surface, text-muted, border-border… */
+@theme inline {
+  --color-*: initial;
+  --color-transparent: transparent;
+  --color-current: currentColor;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-border-input: var(--border-input);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-placeholder: var(--text-placeholder);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-focus: var(--focus);
+  --color-selection: var(--selection);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-block-gray: var(--block-gray);
+  --color-block-brown: var(--block-brown);
+  --color-block-orange: var(--block-orange);
+  --color-block-yellow: var(--block-yellow);
+  --color-block-green: var(--block-green);
+  --color-block-blue: var(--block-blue);
+  --color-block-purple: var(--block-purple);
+  --color-block-pink: var(--block-pink);
+  --color-block-red: var(--block-red);
+  --color-block-gray-bg: var(--block-gray-bg);
+  --color-block-brown-bg: var(--block-brown-bg);
+  --color-block-orange-bg: var(--block-orange-bg);
+  --color-block-yellow-bg: var(--block-yellow-bg);
+  --color-block-green-bg: var(--block-green-bg);
+  --color-block-blue-bg: var(--block-blue-bg);
+  --color-block-purple-bg: var(--block-purple-bg);
+  --color-block-pink-bg: var(--block-pink-bg);
+  --color-block-red-bg: var(--block-red-bg);
+
+  --font-sans: var(--ff-sans);
+  --font-serif: var(--ff-serif);
+  --font-mono: var(--ff-mono);
+
+  --text-*: initial;
+  --text-2xs: var(--fs-2xs);
+  --text-2xs--line-height: var(--lh-2xs);
+  --text-xs: var(--fs-xs);
+  --text-xs--line-height: var(--lh-xs);
+  --text-sm: var(--fs-sm);
+  --text-sm--line-height: var(--lh-sm);
+  --text-base: var(--fs-base);
+  --text-base--line-height: var(--lh-base);
+  --text-h3: var(--fs-h3);
+  --text-h3--line-height: var(--lh-h3);
+  --text-h2: var(--fs-h2);
+  --text-h2--line-height: var(--lh-h2);
+  --text-h1: var(--fs-h1);
+  --text-h1--line-height: var(--lh-h1);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-title);
+
+  --radius-*: initial;
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-full: var(--r-pill);
+
+  --shadow-*: initial;
+  --shadow-pop: var(--sh-pop);
+  --shadow-modal: var(--sh-modal);
+  --shadow-card: var(--sh-card);
+
+  --ease-out: var(--motion-ease);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--ff-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+/* Un seul anneau de focus pour toute l'app, visible au clavier uniquement. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

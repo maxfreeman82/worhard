@@ -1,0 +1,77 @@
+  AAA   13.17:1  light-text               on light-bg             
+  AAA   12.39:1  light-text               on light-surface        
+  AAA   11.44:1  light-text               on light-surface-hover  
+  AAA   10.53:1  light-text               on light-surface-active 
+  AAA   10.36:1  light-text               on light-selection      
+  AA     5.50:1  light-text-muted         on light-bg             
+  AA     5.18:1  light-text-muted         on light-surface        
+  AA     4.78:1  light-text-muted         on light-surface-hover  
+  AA     4.82:1  light-text-placeholder   on light-bg             
+  AA     6.29:1  light-on-accent          on light-accent         
+  AAA    7.83:1  light-on-accent          on light-accent-hover   
+  AA     6.29:1  light-accent             on light-bg             
+  AA     5.54:1  light-accent             on light-accent-soft    
+  AA     5.36:1  light-danger             on light-bg             
+  AA     4.67:1  light-danger             on light-danger-soft    
+  AA     5.22:1  light-success            on light-bg             
+  AA     5.14:1  light-warning            on light-bg             
+  PASS   3.28:1  light-border-input       on light-bg             ui
+  PASS   6.29:1  light-focus              on light-bg             ui
+  PASS   5.92:1  light-focus              on light-surface        ui
+  AA     5.50:1  light-block-gray         on light-bg             
+  AA     5.74:1  light-block-brown        on light-bg             
+  AA     4.79:1  light-block-orange       on light-bg             
+  AA     5.20:1  light-block-yellow       on light-bg             
+  AA     5.58:1  light-block-green        on light-bg             
+  AA     5.57:1  light-block-blue         on light-bg             
+  AA     5.71:1  light-block-purple       on light-bg             
+  AA     5.46:1  light-block-pink         on light-bg             
+  AA     5.17:1  light-block-red          on light-bg             
+  AAA   11.64:1  light-text               on light-block-gray-bg  
+  AAA   11.48:1  light-text               on light-block-brown-bg 
+  AAA   11.38:1  light-text               on light-block-orange-bg 
+  AAA   11.88:1  light-text               on light-block-yellow-bg 
+  AAA   11.68:1  light-text               on light-block-green-bg 
+  AAA   11.65:1  light-text               on light-block-blue-bg  
+  AAA   11.70:1  light-text               on light-block-purple-bg 
+  AAA   11.63:1  light-text               on light-block-pink-bg  
+  AAA   11.46:1  light-text               on light-block-red-bg   
+  AAA   11.86:1  dark-text                on dark-bg              
+  AAA   10.99:1  dark-text                on dark-surface         
+  AAA    9.42:1  dark-text                on dark-surface-hover   
+  AAA    8.03:1  dark-text                on dark-surface-active  
+  AAA    7.95:1  dark-text                on dark-selection       
+  AA     6.33:1  dark-text-muted          on dark-bg              
+  AA     5.86:1  dark-text-muted          on dark-surface         
+  AA     5.02:1  dark-text-muted          on dark-surface-hover   
+  AA     5.37:1  dark-text-placeholder    on dark-bg              
+  AA     5.05:1  dark-on-accent           on dark-accent          
+  AA     4.21:1  dark-on-accent           on dark-accent-hover    large
+  PASS   3.48:1  dark-accent              on dark-bg              ui
+  AA     5.79:1  dark-danger              on dark-bg              
+  AA     4.77:1  dark-danger              on dark-danger-soft     
+  AAA    7.00:1  dark-success             on dark-bg              
+  AAA    7.78:1  dark-warning             on dark-bg              
+  PASS   3.45:1  dark-border-input        on dark-bg              ui
+  PASS   6.05:1  dark-focus               on dark-bg              ui
+  PASS   5.61:1  dark-focus               on dark-surface         ui
+  AA     6.33:1  dark-block-gray          on dark-bg              
+  AA     5.59:1  dark-block-brown         on dark-bg              
+  AA     6.30:1  dark-block-orange        on dark-bg              
+  AAA    7.41:1  dark-block-yellow        on dark-bg              
+  AA     6.57:1  dark-block-green         on dark-bg              
+  AA     6.55:1  dark-block-blue          on dark-bg              
+  AA     5.54:1  dark-block-purple        on dark-bg              
+  AA     5.35:1  dark-block-pink          on dark-bg              
+  AA     5.39:1  dark-block-red           on dark-bg              
+  AAA    9.03:1  dark-text                on dark-block-gray-bg   
+  AAA    7.97:1  dark-text                on dark-block-brown-bg  
+  AA     6.73:1  dark-text                on dark-block-orange-bg 
+  AA     6.36:1  dark-text                on dark-block-yellow-bg 
+  AAA    7.94:1  dark-text                on dark-block-green-bg  
+  AAA    8.12:1  dark-text                on dark-block-blue-bg   
+  AAA    8.52:1  dark-text                on dark-block-purple-bg 
+  AAA    8.10:1  dark-text                on dark-block-pink-bg   
+  AAA    7.95:1  dark-text                on dark-block-red-bg    
+
+  75 pairs, 0 failing AA

@@ -1,0 +1,117 @@
+feature,area,priority,original,clone,notes
+Inscription et connexion par e-mail (code magique),compte,must,yes,no,phase 1
+Connexion avec Google,compte,should,yes,no,phase 1
+Création d'un espace de travail à l'onboarding,compte,must,yes,no,phase 1
+Plusieurs espaces de travail et sélecteur,compte,could,yes,no,phase 2
+Barre latérale avec arbre de pages dépliable,navigation,must,yes,no,phase 1
+Glisser-déposer des pages dans la barre latérale,navigation,must,yes,no,phase 1
+Section Favoris,navigation,should,yes,no,phase 1
+Section Privé / Partagé,navigation,must,yes,no,phase 1
+Accueil avec pages récentes,navigation,should,yes,no,phase 1
+Fil d'Ariane et menu ⋯ de page,navigation,must,yes,no,phase 1
+Barre latérale repliable et version mobile,navigation,should,yes,no,phase 1
+Recherche rapide Ctrl+K (titres et contenu),recherche,must,yes,no,phase 1
+Filtres de recherche (auteur / date / teamspace),recherche,could,yes,no,phase 2
+Créer / renommer / dupliquer / déplacer une page,pages,must,yes,no,phase 1
+Icône (emoji) et image de couverture,pages,must,yes,no,phase 1
+Options de page (pleine largeur / petit texte / police),pages,could,yes,no,phase 1
+Verrouiller une page,pages,could,yes,no,phase 2
+Corbeille avec restauration et suppression définitive,pages,must,yes,no,phase 1
+Éditeur par blocs : paragraphe et titres H1-H3,éditeur,must,yes,no,phase 1
+Listes à puces / numérotées / to-do,éditeur,must,yes,no,phase 1
+Bloc toggle et titres repliables,éditeur,must,yes,no,phase 1
+Citation / callout / séparateur,éditeur,must,yes,no,phase 1
+Bloc de code avec coloration et langage,éditeur,must,yes,no,phase 1
+Sous-page comme bloc,éditeur,must,yes,no,phase 1
+Menu « / » filtrable,éditeur,must,yes,no,phase 1
+Raccourcis Markdown à la frappe (# - [] > ```),éditeur,must,yes,no,phase 1
+Mise en forme du texte (gras / italique / souligné / barré / code / lien / couleur),éditeur,must,yes,no,phase 1
+Poignée ⋮⋮ : glisser-déposer des blocs,éditeur,must,yes,no,phase 1
+Menu de bloc (supprimer / dupliquer / transformer / couleur),éditeur,must,yes,no,phase 1
+Imbrication des blocs (Tab / Maj+Tab),éditeur,must,yes,no,phase 1
+Annuler / rétablir,éditeur,must,yes,no,phase 1
+Sélection de plusieurs blocs,éditeur,must,yes,no,phase 1
+Coller du texte riche / Markdown / images,éditeur,should,yes,no,phase 1
+Images (import / lien / redimensionner / légende),éditeur,must,yes,no,phase 1
+Fichiers / PDF / vidéo / audio,éditeur,should,yes,no,phase 1
+Signet (aperçu de lien) et intégrations (embed),éditeur,should,yes,no,phase 4
+Colonnes (blocs côte à côte),éditeur,should,yes,no,phase 1
+Tableau simple (non-BDD),éditeur,should,yes,no,phase 1
+Table des matières et fil d'Ariane en bloc,éditeur,could,yes,no,phase 1
+Équations (KaTeX),éditeur,could,yes,no,phase 4
+Onglets (bloc tab),éditeur,could,yes,no,phase 4
+Blocs synchronisés,éditeur,could,yes,no,phase 4
+Mentions @page / @personne / @date,éditeur,should,yes,no,phase 2
+Lien vers un bloc précis,éditeur,could,yes,no,phase 2
+Partage : inviter par e-mail avec niveau d'accès,partage,must,yes,no,phase 2
+Héritage des droits dans l'arbre de pages,partage,must,yes,no,phase 2
+Accès général (espace / sur invitation),partage,must,yes,no,phase 2
+Invités externes,partage,should,yes,no,phase 2
+Rôles de l'espace (propriétaire / membre / invité),partage,must,yes,no,phase 2
+Gestion des membres dans les réglages,partage,must,yes,no,phase 2
+Teamspaces (ouvert / fermé / privé),partage,should,yes,no,phase 2
+Groupes de permissions,partage,could,yes,no,phase 2
+Publication web d'une page (lien public),partage,should,yes,no,phase 4
+Publication : autoriser la duplication / indexation,partage,could,yes,no,phase 4
+Domaine personnalisé pour les pages publiées,partage,could,yes,no,phase 4
+Commentaires sur le texte / les blocs / la page,collaboration,must,yes,no,phase 2
+Résoudre / rouvrir / réactions aux commentaires,collaboration,should,yes,no,phase 2
+Boîte de réception (notifications),collaboration,must,yes,no,phase 2
+Notifications par e-mail,collaboration,should,yes,no,phase 2
+Édition simultanée en temps réel,collaboration,must,yes,no,"phase 2, CRDT (Yjs)"
+Présence (avatars et curseurs des autres),collaboration,should,yes,no,phase 2
+Historique des versions et restauration,collaboration,should,yes,no,phase 2
+Suggestions de modifications,collaboration,could,yes,no,phase 4
+Rappels sur les dates,collaboration,could,yes,no,phase 4
+BDD : création en ligne et en pleine page,bdd,must,yes,no,phase 3
+Lignes = pages ouvrables (aperçu latéral / centré / pleine page),bdd,must,yes,no,phase 3
+Propriétés de base (titre / texte / nombre / sélection / multi-sélection / date / case / URL / e-mail / téléphone),bdd,must,yes,no,phase 3
+Propriété statut avec groupes,bdd,must,yes,no,phase 3
+Propriétés personne et fichiers,bdd,must,yes,no,phase 3
+Propriétés automatiques (créé le / par / modifié le / par / ID unique),bdd,should,yes,no,phase 3
+Relations entre BDD (simple et double sens),bdd,must,yes,no,phase 3
+Rollups,bdd,should,yes,no,phase 3
+Formules,bdd,should,yes,no,"phase 3, mini-langage à écrire"
+Changer le type d'une propriété (conversion),bdd,should,yes,no,phase 3
+Sous-tâches et dépendances,bdd,could,yes,no,phase 4
+Vue Tableau (édition des cellules / largeur / colonne figée),bdd,must,yes,no,phase 3
+Vue Kanban avec glisser-déposer,bdd,must,yes,no,phase 3
+Vue Liste,bdd,should,yes,no,phase 3
+Vue Galerie,bdd,should,yes,no,phase 3
+Vue Calendrier,bdd,should,yes,no,phase 3
+Vue Chronologie,bdd,could,yes,no,phase 4
+Vue Graphique (barres / lignes / anneau),bdd,could,yes,no,phase 4
+Plusieurs vues par BDD (onglets),bdd,must,yes,no,phase 3
+Filtres simples,bdd,must,yes,no,phase 3
+Filtres avancés ET / OU imbriqués (3 niveaux),bdd,should,yes,no,phase 3
+Tris multiples,bdd,must,yes,no,phase 3
+Grouper et sous-grouper,bdd,should,yes,no,phase 3
+Propriétés visibles par vue,bdd,must,yes,no,phase 3
+Filtre perso ou pour tout le monde,bdd,could,yes,no,phase 3
+Recherche dans une BDD,bdd,should,yes,no,phase 3
+Calculs en pied de colonne (somme / moyenne / nombre),bdd,should,yes,no,phase 3
+Vues liées (afficher une BDD ailleurs),bdd,should,yes,no,phase 3
+Modèles de lignes de BDD,bdd,should,yes,no,phase 4
+Permissions par BDD / par colonne,bdd,could,yes,no,phase 4
+Formulaires liés à une BDD,bdd,should,yes,no,phase 4
+Logique conditionnelle des formulaires,bdd,could,yes,no,phase 4
+Automatisations de BDD (déclencheur → actions),automatisation,should,yes,no,phase 4
+Bloc / propriété bouton,automatisation,could,yes,no,phase 4
+Modèles de pages (galerie interne),modèles,should,yes,no,phase 4
+Import Markdown / CSV / HTML,import-export,should,yes,no,phase 4
+Export Markdown + CSV / HTML,import-export,should,yes,no,phase 4
+Export PDF,import-export,could,yes,no,phase 4
+IA : écrire / résumer / traduire dans l'éditeur,ia,should,yes,no,"phase 5, ta propre clé API"
+IA : chat sur le contenu de l'espace,ia,could,yes,no,"phase 5, recherche + ta clé API"
+IA : remplissage automatique de propriétés,ia,could,yes,no,phase 5
+Thème sombre,préférences,should,yes,no,phase 1
+Mode hors ligne,préférences,could,yes,no,phase 4
+Galerie de modèles communautaire (Marketplace),modèles,could,yes,skip,c'est le catalogue et le réseau de créateurs de Notion
+Agents personnalisés / crédits / Workers / MCP Notion,ia,could,yes,skip,services IA propres à Notion ; remplacés par ta clé API
+Notes de réunion IA (transcription),ia,could,yes,skip,"produit à part, nécessite une capture audio"
+Synchronisations Jira / GitHub / Salesforce / Slack,intégrations,could,yes,skip,"intégrations partenaires ; refaisables une par une via API officielle si besoin"
+Notion Calendar / Notion Mail,produits,could,yes,skip,produits distincts
+Applications natives desktop et mobile,plateforme,could,yes,skip,plateforme retenue : web
+SAML SSO / SCIM / journal d'audit / DLP,admin,could,yes,skip,inutile pour un usage interne
+Analytique de l'espace de travail,admin,could,yes,skip,inutile pour un usage interne
+"Marque, logo, textes et police de Notion",marque,must,yes,skip,"appartient à Notion ; on refait tout (voir /replica-brand)"
