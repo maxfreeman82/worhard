@@ -63,33 +63,33 @@ Présence (avatars et curseurs des autres),collaboration,should,yes,no,phase 2
 Historique des versions et restauration,collaboration,should,yes,no,phase 2
 Suggestions de modifications,collaboration,could,yes,no,phase 4
 Rappels sur les dates,collaboration,could,yes,no,phase 4
-BDD : création en ligne et en pleine page,bdd,must,yes,no,phase 3
-Lignes = pages ouvrables (aperçu latéral / centré / pleine page),bdd,must,yes,no,phase 3
-Propriétés de base (titre / texte / nombre / sélection / multi-sélection / date / case / URL / e-mail / téléphone),bdd,must,yes,no,phase 3
-Propriété statut avec groupes,bdd,must,yes,no,phase 3
-Propriétés personne et fichiers,bdd,must,yes,no,phase 3
-Propriétés automatiques (créé le / par / modifié le / par / ID unique),bdd,should,yes,no,phase 3
-Relations entre BDD (simple et double sens),bdd,must,yes,no,phase 3
-Rollups,bdd,should,yes,no,phase 3
-Formules,bdd,should,yes,no,"phase 3, mini-langage à écrire"
-Changer le type d'une propriété (conversion),bdd,should,yes,no,phase 3
+BDD : création en ligne et en pleine page,bdd,must,yes,yes,"phase 3 ; « / » (en ligne, pleine page) et accueil"
+Lignes = pages ouvrables (aperçu latéral / centré / pleine page),bdd,must,yes,yes,phase 3 ; S26
+Propriétés de base (titre / texte / nombre / sélection / multi-sélection / date / case / URL / e-mail / téléphone),bdd,must,yes,yes,"phase 3 ; option créée à la volée, couleurs, formats de nombre, plages de dates et heure"
+Propriété statut avec groupes,bdd,must,yes,yes,phase 3 ; À faire / En cours / Terminé
+Propriétés personne et fichiers,bdd,must,yes,partial,phase 3 ; personne : un seul utilisateur en version locale ; fichiers dans IndexedDB
+Propriétés automatiques (créé le / par / modifié le / par / ID unique),bdd,should,yes,yes,phase 3 ; ID avec préfixe
+Relations entre BDD (simple et double sens),bdd,must,yes,yes,"phase 3 ; double sens synchronisé ; testé en unitaire, pas encore de bout en bout"
+Rollups,bdd,should,yes,yes,phase 3 ; 13 calculs ; testé en unitaire
+Formules,bdd,should,yes,no,"phase 3, mini-langage à écrire ; mini-langage à écrire"
+Changer le type d'une propriété (conversion),bdd,should,yes,partial,"phase 3 ; conversion des valeurs écrite, pas encore testée de bout en bout"
 Sous-tâches et dépendances,bdd,could,yes,no,phase 4
-Vue Tableau (édition des cellules / largeur / colonne figée),bdd,must,yes,no,phase 3
-Vue Kanban avec glisser-déposer,bdd,must,yes,no,phase 3
-Vue Liste,bdd,should,yes,no,phase 3
-Vue Galerie,bdd,should,yes,no,phase 3
-Vue Calendrier,bdd,should,yes,no,phase 3
+Vue Tableau (édition des cellules / largeur / colonne figée),bdd,must,yes,partial,"phase 3 ; édition, largeur, retour à la ligne ; pas de colonne figée"
+Vue Kanban avec glisser-déposer,bdd,must,yes,yes,phase 3 ; S17
+Vue Liste,bdd,should,yes,yes,phase 3 ; S18
+Vue Galerie,bdd,should,yes,yes,phase 3 ; S19 ; aperçu couverture ou contenu
+Vue Calendrier,bdd,should,yes,yes,phase 3 ; S20 ; glisser une tâche vers un autre jour
 Vue Chronologie,bdd,could,yes,no,phase 4
 Vue Graphique (barres / lignes / anneau),bdd,could,yes,no,phase 4
-Plusieurs vues par BDD (onglets),bdd,must,yes,no,phase 3
-Filtres simples,bdd,must,yes,no,phase 3
-Filtres avancés ET / OU imbriqués (3 niveaux),bdd,should,yes,no,phase 3
-Tris multiples,bdd,must,yes,no,phase 3
-Grouper et sous-grouper,bdd,should,yes,no,phase 3
-Propriétés visibles par vue,bdd,must,yes,no,phase 3
+Plusieurs vues par BDD (onglets),bdd,must,yes,yes,"phase 3 ; créer, dupliquer, supprimer, changer de disposition"
+Filtres simples,bdd,must,yes,yes,phase 3
+Filtres avancés ET / OU imbriqués (3 niveaux),bdd,should,yes,yes,phase 3
+Tris multiples,bdd,must,yes,yes,phase 3 ; vides toujours en dernier
+Grouper et sous-grouper,bdd,should,yes,partial,"phase 3 ; grouper (tableau, liste, Kanban) ; pas de sous-groupes"
+Propriétés visibles par vue,bdd,must,yes,yes,phase 3 ; ordre réglable
 Filtre perso ou pour tout le monde,bdd,could,yes,no,phase 3
-Recherche dans une BDD,bdd,should,yes,no,phase 3
-Calculs en pied de colonne (somme / moyenne / nombre),bdd,should,yes,no,phase 3
+Recherche dans une BDD,bdd,should,yes,yes,phase 3 ; toutes les propriétés
+Calculs en pied de colonne (somme / moyenne / nombre),bdd,should,yes,yes,phase 3
 Vues liées (afficher une BDD ailleurs),bdd,should,yes,no,phase 3
 Modèles de lignes de BDD,bdd,should,yes,no,phase 4
 Permissions par BDD / par colonne,bdd,could,yes,no,phase 4

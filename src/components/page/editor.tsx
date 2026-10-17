@@ -135,7 +135,7 @@ export function PageEditor({
       {
         title: "Base de données en ligne",
         subtext: "Un tableau de pages, avec propriétés et vues, dans cette page",
-        aliases: ["base", "bdd", "database", "tableau de donnees", "inline"],
+        aliases: ["base de donnees en ligne", "bdd", "database", "tableau", "inline"],
         group: "Bases de données",
         icon: <Table2 size={18} />,
         onItemClick: async () => {
@@ -146,7 +146,7 @@ export function PageEditor({
       {
         title: "Base de données pleine page",
         subtext: "Une sous-page qui est une base de données",
-        aliases: ["base", "bdd", "database", "pleine page"],
+        aliases: ["base de donnees pleine page", "bdd", "database", "pleine page"],
         group: "Bases de données",
         icon: <Sheet size={18} />,
         onItemClick: async () => {
