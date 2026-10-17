@@ -1,13 +1,14 @@
 "use client";
 
-import { Clock, FileText, LayoutTemplate, Plus, Search } from "lucide-react";
+import { Clock, FileText, LayoutTemplate, Plus, Search, Table2 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect } from "react";
 import { Kbd, Skeleton } from "@/components/ui/display";
 import { BareTopBar } from "@/components/shell/bare-top-bar";
 import { useShell } from "@/components/shell/shell-context";
 import { usePageActions } from "@/components/shell/use-page-actions";
-import { useRecent, useSession } from "@/lib/data";
+import { createDatabase, useRecent, useSession } from "@/lib/data";
 
 function greeting() {
   const h = new Date().getHours();
@@ -21,6 +22,7 @@ export default function HomePage() {
   const recent = useRecent(8);
   const shell = useShell();
   const actions = usePageActions();
+  const router = useRouter();
   const name = session?.profile?.name?.split(" ")[0];
 
   useEffect(() => {
@@ -75,8 +77,21 @@ export default function HomePage() {
             <h2 id="start" className="mb-3 text-xs font-medium text-muted">
               Pour aller plus vite
             </h2>
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <QuickAction icon={<Plus className="size-5" />} title="Nouvelle page" body="Une page vide dans la section Privé." onClick={() => actions.create(null, "private")} />
+              <QuickAction
+                icon={<Table2 className="size-5" />}
+                title="Nouvelle base de données"
+                body="Tableau, Kanban, calendrier… sur les mêmes pages."
+                onClick={async () => {
+                  try {
+                    const { page } = await createDatabase({ parentId: null, section: "private" });
+                    router.push(`/p/${page.id}?new=1`);
+                  } catch (e) {
+                    actions.fail(e);
+                  }
+                }}
+              />
               <QuickAction icon={<LayoutTemplate className="size-5" />} title="Partir d'un modèle" body="Compte rendu, journal, fiche projet…" onClick={() => shell.openModal("templates")} />
               <QuickAction
                 icon={<Search className="size-5" />}

@@ -28,6 +28,8 @@ import { useShell } from "@/components/shell/shell-context";
 import { usePageActions } from "@/components/shell/use-page-actions";
 import { deleteForever, markVisited, setTrash, updatePageMeta, useIsFavorite, usePage, usePath, type Page, type PageFont } from "@/lib/data";
 import type { SaveStatus } from "./editor";
+import { DatabaseView } from "@/components/database/database-view";
+import { RowProperties } from "@/components/database/row-properties";
 import { Cover, HeaderControls, IconPicker } from "./page-header";
 
 const PageEditor = dynamic(() => import("./editor").then((m) => m.PageEditor), {
@@ -111,9 +113,23 @@ function Loaded({ page }: { page: Page }) {
             {editable && <HeaderControls page={page} />}
             <TitleInput page={page} editable={editable} onEnter={() => focusEditor()} />
           </header>
-          <div className="-mx-[54px] mt-2 max-md:-mx-3">
-            <PageEditor key={page.id} page={page} editable={editable} onStatus={onStatus} onNavigate={(cid) => router.push(`/p/${cid}?new=1`)} />
-          </div>
+          {page.databaseOwnerOf ? (
+            <div className="mt-4">
+              <DatabaseView databaseId={page.databaseOwnerOf} readOnly={!editable} />
+            </div>
+          ) : (
+            <>
+              {page.rowOf && (
+                <>
+                  <RowProperties row={page} readOnly={!editable} />
+                  <div className="my-2 h-px bg-border" />
+                </>
+              )}
+              <div className="-mx-[54px] mt-2 max-md:-mx-3">
+                <PageEditor key={page.id} page={page} editable={editable} onStatus={onStatus} onNavigate={(cid) => router.push(`/p/${cid}?new=1`)} />
+              </div>
+            </>
+          )}
         </article>
       </div>
     </>

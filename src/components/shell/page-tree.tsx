@@ -13,6 +13,7 @@ import {
   Plus,
   Star,
   StarOff,
+  Table2,
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
@@ -119,7 +120,7 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
 
             <span className="relative flex size-[22px] shrink-0 items-center justify-center">
               <span aria-hidden className="flex items-center justify-center group-hover:invisible">
-                {page.icon ? <span className="text-base leading-none">{page.icon}</span> : <FileText className="size-4" />}
+                {page.icon ? <span className="text-base leading-none">{page.icon}</span> : page.databaseOwnerOf ? <Table2 className="size-4" /> : <FileText className="size-4" />}
               </span>
               <button
                 type="button"

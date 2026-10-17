@@ -7,6 +7,7 @@ import { FileText } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { blockBg, type BlockColor } from "@/components/ui/display";
+import { DatabaseView } from "@/components/database/database-view";
 import { usePage } from "@/lib/data";
 
 const CALLOUT_EMOJIS = ["💡", "📌", "⚠️", "✅", "❗", "ℹ️", "🔥", "📝", "🎯", "🚧"];
@@ -114,3 +115,20 @@ function PageLink({ pageId }: { pageId: string }) {
     </Link>
   );
 }
+
+/** Base de données en ligne : la vue complète, insérée dans la page. */
+export const DatabaseBlock = createReactBlockSpec(
+  {
+    type: "database",
+    propSchema: { databaseId: { default: "" } },
+    content: "none",
+  },
+  {
+    render: ({ block, editor }) => (
+      // Les touches tapées dans la base ne doivent pas être interprétées par l'éditeur de la page.
+      <div contentEditable={false} className="w-full" onKeyDown={(e) => e.stopPropagation()} onPaste={(e) => e.stopPropagation()}>
+        <DatabaseView databaseId={block.props.databaseId} inline readOnly={!editor.isEditable} />
+      </div>
+    ),
+  },
+);

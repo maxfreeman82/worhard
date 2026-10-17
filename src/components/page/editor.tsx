@@ -5,13 +5,13 @@ import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems, insertOrUpda
 import { fr } from "@blocknote/core/locales";
 import { BlockNoteView, type Theme } from "@blocknote/mantine";
 import { getDefaultReactSlashMenuItems, SuggestionMenuController, useCreateBlockNote, type DefaultReactSuggestionItem } from "@blocknote/react";
-import { FileText, MessageSquareQuote } from "lucide-react";
+import { FileText, MessageSquareQuote, Sheet, Table2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { blocksToText, createPage, getContentVersion, resolveFileUrl, savePageContent, uploadFile, type Page } from "@/lib/data";
-import { CalloutBlock, PageBlock } from "./blocks";
+import { blocksToText, createDatabase, createPage, getContentVersion, resolveFileUrl, savePageContent, uploadFile, type Page } from "@/lib/data";
+import { CalloutBlock, DatabaseBlock, PageBlock } from "./blocks";
 
 export const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: CalloutBlock(), page: PageBlock() },
+  blockSpecs: { ...defaultBlockSpecs, callout: CalloutBlock(), page: PageBlock(), database: DatabaseBlock() },
 });
 type Editor = typeof schema.BlockNoteEditor;
 
@@ -133,6 +133,30 @@ export function PageEditor({
         },
       },
       {
+        title: "Base de données en ligne",
+        subtext: "Un tableau de pages, avec propriétés et vues, dans cette page",
+        aliases: ["base", "bdd", "database", "tableau de donnees", "inline"],
+        group: "Bases de données",
+        icon: <Table2 size={18} />,
+        onItemClick: async () => {
+          const { database } = await createDatabase({ parentId: page.id, section: page.section }, { inline: true });
+          insertOrUpdateBlockForSlashMenu(editor, { type: "database", props: { databaseId: database.id } });
+        },
+      },
+      {
+        title: "Base de données pleine page",
+        subtext: "Une sous-page qui est une base de données",
+        aliases: ["base", "bdd", "database", "pleine page"],
+        group: "Bases de données",
+        icon: <Sheet size={18} />,
+        onItemClick: async () => {
+          const res = await createDatabase({ parentId: page.id, section: page.section });
+          insertOrUpdateBlockForSlashMenu(editor, { type: "page", props: { pageId: res.page.id } });
+          await flush();
+          onNavigate(res.page.id);
+        },
+      },
+      {
         title: "Encadré",
         subtext: "Mettre une information en avant",
         aliases: ["callout", "encadre", "note", "info"],
@@ -143,8 +167,10 @@ export function PageEditor({
     ];
     // Les blocs ajoutés rejoignent le groupe « Blocs de base » existant (sinon il apparaît deux fois).
     const items = getDefaultReactSlashMenuItems(editor);
+    const basic = custom.filter((c) => c.group === "Blocs de base");
     const lastBasic = items.findLastIndex((i) => i.group === "Blocs de base");
-    items.splice(lastBasic + 1, 0, ...custom);
+    items.splice(lastBasic + 1, 0, ...basic);
+    items.push(...custom.filter((c) => c.group !== "Blocs de base"));
     return filterSuggestionItems(items, q);
   };
 
