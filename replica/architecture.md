@@ -30,7 +30,7 @@ Pas de microservices : une app Next.js, une base, et un seul service à part (Ho
 
 ## Schéma
 
-Tables : 22 (+ 4 tables de Better Auth : user, session, account, verification). Accès : RLS Postgres. Fichier complet : [`schema.sql`](schema.sql).
+Tables : 22 (+ 4 tables de Better Auth : user, session, account, verification). Accès : RLS Postgres. Fichier complet : [`0001_init.sql`](../db/migrations/0001_init.sql).
 
 Comment la RLS fonctionne sans Supabase :
 
@@ -40,7 +40,7 @@ Comment la RLS fonctionne sans Supabase :
 4. les requêtes de l'écran suivent ; la valeur disparaît à la fin de la transaction.
 
 Les migrations et les tâches serveur (création d'espace, notifications, purge) utilisent le rôle propriétaire.
-`replica/schema.test.mjs` vérifie ce montage (rôle non propriétaire + `app.user_id`) : 30 contrôles.
+`db/schema.test.mjs` vérifie ce montage (rôle non propriétaire + `app.user_id`) : 30 contrôles.
 
 | table | rôle | phase |
 | --- | --- | --- |

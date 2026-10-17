@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test src/**/*.test.ts"
+    "test": "node --test src/**/*.test.ts",
+    "db:setup-role": "node --env-file=.env.local scripts/setup-app-role.mjs",
+    "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "db:test": "node db/schema.test.mjs db/migrations/0001_init.sql"
   },
   "dependencies": {
     "@blocknote/core": "^0.56.0",
@@ -16,12 +19,14 @@
     "@mantine/core": "^8.3.18",
     "@mantine/hooks": "^8.3.18",
     "@neondatabase/serverless": "^1.2.0",
+    "better-auth": "^1.7.10",
     "clsx": "^2.1.1",
     "lucide-react": "^1.57.0",
     "next": "16.4.0",
     "radix-ui": "^1.8.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
