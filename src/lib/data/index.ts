@@ -7,6 +7,26 @@ import * as store from "./local";
 
 export * from "./types";
 export {
+  addOption,
+  addProperty,
+  addRelation,
+  changePropertyType,
+  createDatabase,
+  createRow,
+  createView,
+  defaultViewConfig,
+  deleteOption,
+  deleteProperty,
+  deleteView,
+  duplicateProperty,
+  duplicateView,
+  moveRow,
+  moveView,
+  PROPERTY_LABELS,
+  updateOption,
+  updateProperty,
+  updateRowProp,
+  updateView,
   createPage,
   createWorkspace,
   deleteForever,
@@ -54,3 +74,37 @@ export const useRecent = (limit = 8) => useData(() => store.listRecent(limit), [
 export const useTrash = () => useData(() => store.listTrash(), []);
 export const useSearch = (q: string) => useData(() => store.search(q), [q]);
 export const useTheme = () => useData(() => store.getTheme(), []);
+
+/** Accès en lecture synchrone pour le moteur de requêtes (relations, agrégations, personnes). */
+export type Resolver = {
+  page: (id: string) => import("./types").Page | null;
+  database: (id: string) => import("./types").Database | null;
+  rows: (databaseId: string) => import("./types").Page[];
+  person: (id: string) => { id: string; name: string; email: string } | null;
+};
+
+const resolver: Resolver = {
+  page: (id) => store.getPage(id),
+  database: (id) => store.getDatabase(id),
+  rows: (id) => store.listRows(id),
+  person: (id) => store.listPeople().find((p) => p.id === id) ?? null,
+};
+
+/** Tout ce qu'il faut pour afficher une base : schéma, vues, lignes, page conteneur. */
+export const useDatabaseData = (databaseId: string) =>
+  useData(() => {
+    const database = store.getDatabase(databaseId);
+    if (!database) return null;
+    return {
+      database,
+      container: store.getPage(database.pageId),
+      views: store.listViews(databaseId),
+      rows: store.listRows(databaseId),
+      resolve: resolver,
+    };
+  }, [databaseId]);
+export const useDatabases = () => useData(() => store.listDatabases(), []);
+export const usePeople = () => useData(() => store.listPeople(), []);
+export const useRowsOf = (databaseId: string | null | undefined) => useData(() => (databaseId ? store.listRows(databaseId) : []), [databaseId]);
+export const useDatabase = (databaseId: string | null | undefined) => useData(() => (databaseId ? store.getDatabase(databaseId) : null), [databaseId]);
+export const getResolver = () => resolver;

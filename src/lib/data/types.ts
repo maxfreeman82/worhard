@@ -44,12 +44,19 @@ export type Page = {
   createdAt: string;
   updatedAt: string;
   lastEditedBy: string | null;
+  createdBy?: string | null;
+  /** Page conteneur d'une base de données : id de la base. */
+  databaseOwnerOf?: string | null;
+  /** Ligne d'une base de données : id de la base (la page n'a alors pas de parent dans l'arbre). */
+  rowOf?: string | null;
+  /** Valeurs des propriétés d'une ligne : { [propertyId]: valeur }. */
+  props?: Record<string, PropValue>;
 };
 
 /** Ce que la sidebar et les listes affichent : pas le contenu. */
 export type PageSummary = Pick<
   Page,
-  "id" | "parentId" | "section" | "title" | "icon" | "inTrash" | "trashedAt" | "updatedAt"
+  "id" | "parentId" | "section" | "title" | "icon" | "inTrash" | "trashedAt" | "updatedAt" | "databaseOwnerOf" | "rowOf"
 > & { hasChildren: boolean };
 
 export type PageMeta = Partial<
@@ -71,3 +78,130 @@ export class DataError extends Error {
     super(message);
   }
 }
+
+/* ------------------------------------------------------------ bases de données */
+
+export type PropertyType =
+  | "title"
+  | "text"
+  | "number"
+  | "select"
+  | "multi_select"
+  | "status"
+  | "date"
+  | "person"
+  | "checkbox"
+  | "url"
+  | "email"
+  | "phone"
+  | "files"
+  | "relation"
+  | "rollup"
+  | "created_time"
+  | "created_by"
+  | "last_edited_time"
+  | "last_edited_by"
+  | "unique_id";
+
+export type OptionColor = "default" | "gray" | "brown" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink" | "red";
+export type SelectOption = { id: string; name: string; color: OptionColor };
+export type StatusGroup = { id: string; name: string; color: OptionColor; optionIds: string[] };
+
+export type NumberFormat = "number" | "comma" | "percent" | "euro" | "dollar";
+export type RollupFn =
+  | "count"
+  | "count_values"
+  | "count_empty"
+  | "count_not_empty"
+  | "percent_empty"
+  | "percent_not_empty"
+  | "sum"
+  | "average"
+  | "min"
+  | "max"
+  | "earliest"
+  | "latest"
+  | "show_original";
+
+export type PropertyConfig = {
+  options?: SelectOption[];
+  groups?: StatusGroup[];
+  numberFormat?: NumberFormat;
+  /** Relation : base cible ; `pairedPropertyId` = propriété miroir dans la cible (relation à double sens). */
+  relation?: { databaseId: string; pairedPropertyId?: string | null };
+  rollup?: { relationPropertyId: string; targetPropertyId: string; fn: RollupFn };
+  prefix?: string;
+};
+
+export type Property = { id: string; name: string; type: PropertyType; config: PropertyConfig };
+
+export type DateValue = { start: string; end?: string | null; time?: boolean };
+export type FileValue = { name: string; url: string };
+export type PropValue = string | number | boolean | string[] | DateValue | FileValue[] | null;
+
+export type Database = {
+  id: string;
+  /** Page qui contient la base (son titre est celui de la base). */
+  pageId: string;
+  inline: boolean;
+  properties: Property[];
+  nextUniqueId: number;
+};
+
+export type ViewType = "table" | "board" | "list" | "gallery" | "calendar";
+
+export type FilterOp =
+  | "contains"
+  | "not_contains"
+  | "is"
+  | "is_not"
+  | "starts_with"
+  | "ends_with"
+  | "is_empty"
+  | "is_not_empty"
+  | "eq"
+  | "neq"
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "before"
+  | "after"
+  | "on_or_before"
+  | "on_or_after";
+
+export type Filter = { id: string; propertyId: string; op: FilterOp; value: PropValue };
+export type FilterGroup = { id: string; mode: "and" | "or"; items: (Filter | FilterGroup)[] };
+export type Sort = { propertyId: string; dir: "asc" | "desc" };
+export type CalcFn =
+  | "none"
+  | "count"
+  | "count_values"
+  | "count_empty"
+  | "count_not_empty"
+  | "percent_empty"
+  | "percent_not_empty"
+  | "sum"
+  | "average"
+  | "min"
+  | "max"
+  | "checked"
+  | "unchecked";
+
+export type ViewConfig = {
+  filter: FilterGroup;
+  sorts: Sort[];
+  groupBy?: string | null;
+  hiddenGroups?: string[];
+  hideEmptyGroups?: boolean;
+  /** Propriétés affichées, dans l'ordre. La propriété titre est toujours affichée. */
+  visible: string[];
+  widths?: Record<string, number>;
+  dateProperty?: string | null;
+  cardCover?: "none" | "cover" | "content";
+  openIn?: "side" | "center" | "full";
+  calcs?: Record<string, CalcFn>;
+  wrapCells?: boolean;
+};
+
+export type View = { id: string; databaseId: string; name: string; type: ViewType; position: number; config: ViewConfig };
