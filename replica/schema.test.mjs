@@ -4,17 +4,12 @@ import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import fs from 'node:fs';
 
 const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
-// Stubs Supabase
-await db.exec(`
-create schema auth;
-create table auth.users (id uuid primary key);
-create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.uid', true), '')::uuid $$;
-create role authenticated;
-`);
+// Rôle de l'app, non propriétaire des tables : comme en production sur Neon, la RLS s'applique à lui.
+await db.exec(`create role app_user;`);
 await db.exec(fs.readFileSync(process.argv[2], 'utf8'));
-await db.exec(`grant usage on schema public, auth to authenticated;
-  grant all on all tables in schema public to authenticated;
-  grant execute on all functions in schema auth to authenticated;`);
+await db.exec(`grant usage on schema public, app to app_user;
+  grant select, insert, update, delete on all tables in schema public to app_user;
+  grant execute on all functions in schema public, app to app_user;`);
 console.log('SCHEMA OK');
 
 const U = {
@@ -23,7 +18,7 @@ const U = {
   out: '00000000-0000-0000-0000-000000000005',
 };
 for (const [k, id] of Object.entries(U)) {
-  await db.exec(`insert into auth.users values ('${id}'); insert into profiles(id,email,name) values ('${id}','${k}@x.fr','${k}');`);
+  await db.exec(`insert into profiles(id,email,name) values ('${id}','${k}@x.fr','${k}');`);
 }
 const one = async (sql) => (await db.query(sql)).rows[0];
 const ws = (await one(`insert into workspaces(name,created_by) values('W','${U.owner}') returning id`)).id;
@@ -43,7 +38,7 @@ const rh = await ins('teamspace_id,title', `'${tsClosed}','Dossiers RH'`);
 await db.exec(`insert into page_permissions(page_id,user_id,level) values ('${secret.id}','${U.mem2}','can_view'),('${team.id}','${U.guest}','can_comment');`);
 await db.exec(`update pages set has_own_permissions=true, general_access='workspace', general_access_level='can_edit' where id='${team.id}'`);
 
-const asUser = (uid) => db.exec(`select set_config('request.uid','${uid}',false)`);
+const asUser = (uid) => db.exec(`select set_config('app.user_id','${uid}',false)`);
 const lvl = async (uid, pid) => { await asUser(uid); return (await one(`select page_access_level('${pid}') l`)).l; };
 
 let fail = 0;
@@ -76,9 +71,9 @@ try {
 } catch (e) { check(true, 'deplacement en boucle refuse : ' + e.message); }
 await db.exec(`update pages set parent_page_id='${team.id}' where id='${teamChild.id}'`);
 
-// RLS avec le role authenticated
+// RLS avec le rôle app_user
 await asUser(U.mem);
-await db.exec('set role authenticated');
+await db.exec('set role app_user');
 const seen = (await db.query(`select title from pages order by title`)).rows.map((r) => r.title);
 check(!seen.includes('Salaires') && !seen.includes('Dossiers RH') && seen.includes('Mon journal'), 'RLS : mem voit ' + seen.join(', '));
 const sr = (await db.query(`select title from search_pages('${ws}','facture')`)).rows.map((r) => r.title);

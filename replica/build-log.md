@@ -2,7 +2,7 @@
 
 Front d'abord, sans serveur : les données vivent dans le navigateur (`src/lib/data/local.ts`,
 localStorage + IndexedDB pour les fichiers) derrière les mêmes opérations que l'API prévue
-(`replica/architecture.md`). `/replica-backend` remplacera ce fichier par Supabase sans toucher aux écrans.
+(`replica/architecture.md`). `/replica-backend` remplacera ce fichier par Neon sans toucher aux écrans.
 
 Vérifié le 2026-10-15 : `tsc`, `eslint`, `next build` sans erreur ; `replica/e2e/flow.mjs` (23 contrôles)
 et `replica/e2e/dnd.mjs` (4 contrôles) passent dans Chrome, sans erreur console. Captures dans `replica/clone-screens/`.

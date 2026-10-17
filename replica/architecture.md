@@ -1,4 +1,6 @@
-# Architecture : ton espace de travail (une reconstruction des fonctions de Notion)
+# Architecture : workhard (une reconstruction des fonctions de Notion)
+
+Nom du projet : **workhard** (dépôt GitHub et projet Neon).
 
 Usage : interne (toi et ton entreprise). Plateforme : web. Pas de paiement.
 Lit : `replica/recon.md` (S01-S36, F01-F17) et `replica/features.csv` (116 lignes).
@@ -11,16 +13,16 @@ Lit : `replica/recon.md` (S01-S36, F01-F17) et `replica/features.csv` (116 ligne
 | éditeur | BlockNote (sur ProseMirror / TipTap) | déjà « à la Notion » : blocs, menu « / », poignée ⋮⋮, imbrication, raccourcis Markdown, support Yjs. Évite d'écrire un éditeur de zéro (40 % du projet) |
 | styles | Tailwind CSS + tokens de `/replica-design` ; composants Radix UI | Radix fournit menus, popovers, modales accessibles au clavier |
 | état client | TanStack Query + Zustand | cache des pages et de l'arbre ; petit état d'interface (sidebar, aperçus) |
-| base de données | Postgres sur Supabase | une seule base ; jsonb pour le contenu et les propriétés ; recherche plein texte intégrée |
-| ORM | aucun : client Supabase + SQL dans des migrations | les règles d'accès vivent dans Postgres (RLS), le client les respecte automatiquement |
+| base de données | Postgres sur Neon (projet `workhard`) | une seule base ; jsonb pour le contenu et les propriétés ; recherche plein texte intégrée ; branches Neon pour tester les migrations |
+| accès à la base | driver `@neondatabase/serverless` + SQL dans des migrations | chaque requête tourne dans une transaction qui écrit `app.user_id` ; la RLS de Postgres filtre ensuite tout seule |
 | accès | Row Level Security (voir `schema.sql`) | une règle par table, testable en SQL ; impossible d'oublier une vérification dans une route |
-| auth | Supabase Auth : code par e-mail + Google | magic code comme l'original, sans gérer de mots de passe |
-| fichiers | Supabase Storage (bucket privé, URL signées) | images, PDF, pièces jointes ; limites de taille par bucket |
-| temps réel | Yjs + serveur Hocuspocus (Node, phase 2) ; Supabase Realtime pour la présence légère et les notifications | Yjs fusionne les éditions simultanées sans conflit ; Hocuspocus persiste le document dans `pages.ydoc` |
+| auth | Better Auth (MIT), tables dans Neon : plugin code par e-mail + Google | code de connexion comme l'original, sans mots de passe ; identifiants UUID (`advanced.database.generateId: "uuid"`) = `profiles.id` |
+| fichiers | Vercel Blob (accès privé) | images, PDF, pièces jointes ; envoi direct depuis le navigateur avec un jeton court émis par le serveur |
+| temps réel | Yjs + serveur Hocuspocus (Node, phase 2), qui porte aussi la présence ; boîte de réception rafraîchie toutes les 30 s | Yjs fusionne les éditions simultanées sans conflit ; Hocuspocus persiste le document dans `pages.ydoc` |
 | e-mail | Resend | invitations, mentions, résumés de notifications |
-| tâches de fond | Supabase Cron (pg_cron) + Edge Functions | purge de la corbeille, e-mails de notifications, rappels, automatisations différées |
+| tâches de fond | Vercel Cron → route handlers protégés par un secret | purge de la corbeille, e-mails de notifications, rappels, automatisations différées |
 | IA (phase 5) | API Claude avec ta propre clé | résumer, écrire, traduire, chat sur l'espace |
-| hébergement | Vercel (app Next.js) + Fly.io ou Render (Hocuspocus) + Supabase | tout est géré ; gratuit ou presque à quelques utilisateurs |
+| hébergement | Vercel (app Next.js) + Fly.io ou Render (Hocuspocus) + Neon | tout est géré ; gratuit ou presque à quelques utilisateurs |
 
 Pas de microservices : une app Next.js, une base, et un seul service à part (Hocuspocus) à partir de la phase 2, parce que Vercel ne garde pas de connexions WebSocket ouvertes.
 
@@ -28,7 +30,17 @@ Pas de microservices : une app Next.js, une base, et un seul service à part (Ho
 
 ## Schéma
 
-Tables : 22. Accès : RLS Postgres. Fichier complet : [`schema.sql`](schema.sql).
+Tables : 22 (+ 4 tables de Better Auth : user, session, account, verification). Accès : RLS Postgres. Fichier complet : [`schema.sql`](schema.sql).
+
+Comment la RLS fonctionne sans Supabase :
+
+1. le serveur lit la session Better Auth (cookie) et obtient l'id de l'utilisateur ;
+2. il ouvre une transaction Neon avec le rôle `app_user`, qui n'est pas propriétaire des tables (sinon la RLS serait ignorée) ;
+3. première instruction : `select set_config('app.user_id', <id>, true)` ; `app.uid()` le relit dans toutes les règles ;
+4. les requêtes de l'écran suivent ; la valeur disparaît à la fin de la transaction.
+
+Les migrations et les tâches serveur (création d'espace, notifications, purge) utilisent le rôle propriétaire.
+`replica/schema.test.mjs` vérifie ce montage (rôle non propriétaire + `app.user_id`) : 30 contrôles.
 
 | table | rôle | phase |
 | --- | --- | --- |
@@ -63,7 +75,7 @@ Contraintes dures :
 
 ## API
 
-Server actions Next.js pour les mutations, route handlers pour ce qui vient de l'extérieur. Chaque appel passe par le client Supabase de l'utilisateur, donc par la RLS ; la clé service n'est utilisée que dans les fonctions listées « serveur ».
+Server actions Next.js pour les mutations, route handlers pour ce qui vient de l'extérieur. Chaque appel passe par une transaction `app_user` avec `app.user_id`, donc par la RLS ; le rôle propriétaire n'est utilisé que dans les fonctions listées « serveur ».
 
 ### F01 Compte et espace
 
@@ -109,7 +121,7 @@ Server actions Next.js pour les mutations, route handlers pour ce qui vient de l
 | GET `/api/inbox` | notifications | soi-même | filtre | notifications[] | S12 |
 | action `markRead` / `archive` | état des notifications | soi-même | ids | ok | S12 |
 | GET `/api/pages/[id]/versions` + action `restoreVersion` | historique | can_view / can_edit | version_id | page | F13 |
-| WS `wss://collab…/[pageId]` | édition simultanée (Hocuspocus) ; authentifie le jeton Supabase et vérifie `can_access_page` à la connexion | can_view (lecture) / can_edit (écriture) | jeton | mises à jour Yjs | F02 |
+| WS `wss://collab…/[pageId]` | édition simultanée (Hocuspocus) ; vérifie le cookie de session Better Auth et `can_access_page` à la connexion | can_view (lecture) / can_edit (écriture) | jeton | mises à jour Yjs | F02 |
 
 ### F10-F12 Bases de données
 
@@ -147,7 +159,7 @@ Tâches de fond :
 | élagage de l'historique | chaque nuit | garde 1 version par heure après 7 jours, supprime après 90 jours |
 | fichiers orphelins | chaque semaine | supprime les fichiers qui ne sont plus référencés |
 
-Uniquement des API officielles avec tes propres clés (Supabase, Resend, Claude). Jamais les API privées de Notion.
+Uniquement des API officielles avec tes propres clés (Neon, Vercel Blob, Resend, Google, Claude). Jamais les API privées de Notion.
 
 ## Les points délicats
 
@@ -156,7 +168,7 @@ Uniquement des API officielles avec tes propres clés (Supabase, Resend, Claude)
 - **Droits** : tout passe par `page_access_level()`. C'est la fonction la plus risquée : elle doit être couverte par des tests SQL (privé, teamspace ouverte / fermée / privée, sous-page restreinte, invité, admin) avant la phase 2. Elle s'exécute pour chaque ligne lue : surveiller les performances sur la recherche et les grosses BDD.
 - **Performance de l'arbre** : charger les enfants à la demande, jamais l'arbre entier.
 - **Grosses BDD** : pagination par curseur ; index GIN sur `props` ; filtres poussés en SQL ; formules en mémoire limitées.
-- **Fichiers** : 5 Go maximum par fichier (contrainte SQL) ; limite réelle fixée par le bucket ; URL signées à durée courte.
+- **Fichiers** : 5 Go maximum par fichier (contrainte SQL) ; limite réelle fixée par le jeton d'envoi Vercel Blob ; fichiers privés servis par une route qui vérifie l'accès à la page.
 - **Collage** : nettoyer le HTML collé (pas de script, pas de style) avant de le convertir en blocs.
 - **Recherche** : configuration `simple` (pas de racinisation) pour bien gérer français et anglais ; trigrammes pour les titres approximatifs. Pas de recherche dans les fichiers.
 - **Fuseaux horaires** : dates en UTC ; les propriétés date sans heure sont stockées comme dates « locales » (`2026-10-14`) pour ne pas changer de jour selon le fuseau.
@@ -169,7 +181,7 @@ Uniquement des API officielles avec tes propres clés (Supabase, Resend, Claude)
 
 1. **Tranche verticale** (sans soin visuel) : S01 connexion → S02 créer un espace → S03 sidebar → S05 créer une page, écrire, recharger, retrouver le texte.
    Tables : profiles, workspaces, workspace_members, pages. Routes : `sendLoginCode`, `verifyLoginCode`, `createWorkspace`, `createPage`, `savePageContent`, `/api/tree`.
-   Prouve : Supabase Auth, la RLS, BlockNote, la sauvegarde.
+   Prouve : Better Auth, la RLS via `app.user_id` sur Neon, BlockNote, la sauvegarde.
 
 2. **Phase 1, cœur** : S03-S09, S14, S15 (modèles de base), S30 (profil, thème). Tout l'éditeur (blocs texte et médias, menu « / », glisser-déposer, colonnes, tableau simple), arbre avec glisser-déposer, favoris, recherche Ctrl+K, corbeille, fichiers, thème sombre.
    Tables : + favorites, files. Parcours : F01-F06, F13 (corbeille).

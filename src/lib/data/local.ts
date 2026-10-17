@@ -1,6 +1,6 @@
 // Implémentation locale de la couche de données : tout vit dans le navigateur
 // (localStorage pour l'état, IndexedDB pour les fichiers). Mêmes opérations que les
-// server actions prévues dans replica/architecture.md, pour que Supabase la remplace
+// server actions prévues dans replica/architecture.md, pour que la version Neon la remplace
 // sans toucher aux écrans.
 
 import { seedPages } from "./seed";

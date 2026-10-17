@@ -1,7 +1,7 @@
 "use client";
 
 // Point d'entrée unique des écrans vers les données.
-// Aujourd'hui : implémentation locale (navigateur). Demain : Supabase, mêmes signatures.
+// Aujourd'hui : implémentation locale (navigateur). Demain : Neon (serveur), mêmes signatures.
 import { useMemo, useSyncExternalStore } from "react";
 import * as store from "./local";
 

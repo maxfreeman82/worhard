@@ -1,4 +1,4 @@
-// Types partagés par la couche de données (locale aujourd'hui, Supabase ensuite).
+// Types partagés par la couche de données (locale aujourd'hui, Neon ensuite).
 // Les écrans n'importent que ces types et les fonctions de `@/lib/data`.
 
 export type Theme = "system" | "light" | "dark";

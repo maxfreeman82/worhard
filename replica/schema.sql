@@ -1,10 +1,20 @@
--- Schéma du clone Notion (Postgres / Supabase).
+-- Schéma du clone Notion (Postgres sur Neon).
 -- Accès : Row Level Security (RLS) sur toutes les tables, via les fonctions
 -- is_workspace_member() et page_access_level().
+-- L'utilisateur courant est lu dans app.uid() : le serveur l'écrit au début de chaque
+-- transaction (set_config('app.user_id', <id>, true)) après avoir vérifié la session Better Auth.
+-- L'app se connecte avec un rôle qui n'est PAS propriétaire des tables (app_user), sinon la RLS
+-- ne s'applique pas. Les migrations tournent avec le rôle propriétaire. Voir la fin du fichier.
 -- Toutes les heures en timestamptz (UTC). Pas d'argent dans ce produit (usage interne).
 
 create extension if not exists pgcrypto;
 create extension if not exists pg_trgm;
+
+-- Utilisateur courant de la transaction (nul hors requête authentifiée).
+create schema if not exists app;
+create or replace function app.uid() returns uuid language sql stable as $$
+  select nullif(current_setting('app.user_id', true), '')::uuid
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Utilitaire : updated_at automatique
@@ -19,9 +29,11 @@ end $$;
 -- Comptes et espaces de travail                                  (phase 1)
 -- ---------------------------------------------------------------------------
 
--- Profil public lié à auth.users (Supabase Auth gère e-mail, code magique, Google).
+-- Profil de l'app. Même id que l'utilisateur Better Auth (UUID, advanced.database.generateId: "uuid"),
+-- créé par le serveur à la première connexion. Better Auth garde ses propres tables (user, session,
+-- account, verification) ; supprimer un compte supprime le profil (côté serveur, même transaction).
 create table profiles (
-  id uuid primary key references auth.users(id) on delete cascade,
+  id uuid primary key,
   email text not null,
   name text not null default '',
   avatar_url text,
@@ -273,7 +285,7 @@ create table files (
   name text not null,
   mime text not null,
   size_bytes bigint not null check (size_bytes >= 0 and size_bytes <= 5368709120),
-  storage_path text not null unique,       -- chemin dans le bucket Supabase Storage
+  storage_path text not null unique,       -- clé de l'objet dans le stockage de fichiers (Vercel Blob)
   created_at timestamptz not null default now()
 );
 create index on files (workspace_id);
@@ -457,7 +469,7 @@ create or replace function is_workspace_member(ws uuid, min_role text default 'g
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from workspace_members m
-     where m.workspace_id = ws and m.user_id = auth.uid()
+     where m.workspace_id = ws and m.user_id = app.uid()
        and case min_role
              when 'guest'  then true
              when 'member' then m.role in ('owner','admin','member')
@@ -480,7 +492,7 @@ $$;
 create or replace function page_row_access(p pages) returns text
 language plpgsql stable security definer set search_path = public as $$
 declare
-  uid uuid := auth.uid();
+  uid uuid := app.uid();
   ws_role text;
   root_private_owner uuid;
   root_teamspace uuid;
@@ -586,15 +598,15 @@ alter table ai_threads enable row level security;
 
 -- Profils : chacun voit les profils des membres de ses espaces ; ne modifie que le sien.
 create policy profiles_read on profiles for select using (
-  id = auth.uid() or exists (
+  id = app.uid() or exists (
     select 1 from workspace_members a join workspace_members b using (workspace_id)
-     where a.user_id = auth.uid() and b.user_id = profiles.id)
+     where a.user_id = app.uid() and b.user_id = profiles.id)
 );
-create policy profiles_update on profiles for update using (id = auth.uid());
+create policy profiles_update on profiles for update using (id = app.uid());
 
 -- Espaces
 create policy ws_read on workspaces for select using (is_workspace_member(id));
-create policy ws_insert on workspaces for insert with check (created_by = auth.uid());
+create policy ws_insert on workspaces for insert with check (created_by = app.uid());
 create policy ws_update on workspaces for update using (is_workspace_member(id, 'admin'));
 create policy ws_delete on workspaces for delete using (is_workspace_member(id, 'owner'));
 
@@ -602,8 +614,8 @@ create policy wsm_read on workspace_members for select using (is_workspace_membe
 create policy wsm_write on workspace_members for all
   using (is_workspace_member(workspace_id, 'admin'))
   with check (is_workspace_member(workspace_id, 'admin'));
-create policy wsm_leave on workspace_members for delete using (user_id = auth.uid());
--- Le créateur d'un espace s'y ajoute comme propriétaire : fait côté serveur (clé service),
+create policy wsm_leave on workspace_members for delete using (user_id = app.uid());
+-- Le créateur d'un espace s'y ajoute comme propriétaire : fait côté serveur (rôle propriétaire),
 -- comme l'acceptation d'une invitation.
 
 create policy wsi_admin on workspace_invites for all
@@ -614,12 +626,12 @@ create policy wsi_admin on workspace_invites for all
 create policy ts_read on teamspaces for select using (
   is_workspace_member(workspace_id, 'member') and (
     access <> 'private' or exists (
-      select 1 from teamspace_members tm where tm.teamspace_id = id and tm.user_id = auth.uid()))
+      select 1 from teamspace_members tm where tm.teamspace_id = id and tm.user_id = app.uid()))
 );
 create policy ts_write on teamspaces for all
   using (is_workspace_member(workspace_id, 'admin') or exists (
     select 1 from teamspace_members tm where tm.teamspace_id = id
-       and tm.user_id = auth.uid() and tm.role = 'owner'))
+       and tm.user_id = app.uid() and tm.role = 'owner'))
   with check (is_workspace_member(workspace_id, 'member'));
 
 create policy tsm_read on teamspace_members for select using (
@@ -627,9 +639,9 @@ create policy tsm_read on teamspace_members for select using (
 );
 create policy tsm_write on teamspace_members for all
   using (exists (select 1 from teamspace_members me where me.teamspace_id = teamspace_members.teamspace_id
-                   and me.user_id = auth.uid() and me.role = 'owner')
+                   and me.user_id = app.uid() and me.role = 'owner')
          or exists (select 1 from teamspaces t where t.id = teamspace_id and is_workspace_member(t.workspace_id, 'admin'))
-         or user_id = auth.uid());
+         or user_id = app.uid());
 
 -- Pages
 create policy pages_read on pages for select using (access_rank(page_row_access(pages)) >= access_rank('can_view'));
@@ -638,7 +650,7 @@ create policy pages_insert on pages for insert with check (
     (parent_page_id is not null and can_access_page(parent_page_id, 'can_edit'))
     or (database_id is not null and exists (
          select 1 from databases d where d.id = database_id and can_access_page(d.page_id, 'can_edit')))
-    or (private_owner_id = auth.uid())
+    or (private_owner_id = app.uid())
     or (teamspace_id is not null and is_workspace_member(workspace_id, 'member'))
   )
 );
@@ -653,12 +665,12 @@ create policy perm_read on page_permissions for select using (can_access_page(pa
 create policy perm_write on page_permissions for all
   using (can_access_page(page_id, 'full_access')) with check (can_access_page(page_id, 'full_access'));
 
-create policy fav_own on favorites for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy fav_own on favorites for all using (user_id = app.uid()) with check (user_id = app.uid());
 
 create policy files_read on files for select using (is_workspace_member(workspace_id));
 create policy files_insert on files for insert with check (
-  is_workspace_member(workspace_id) and uploaded_by = auth.uid());
-create policy files_delete on files for delete using (uploaded_by = auth.uid() or is_workspace_member(workspace_id, 'admin'));
+  is_workspace_member(workspace_id) and uploaded_by = app.uid());
+create policy files_delete on files for delete using (uploaded_by = app.uid() or is_workspace_member(workspace_id, 'admin'));
 
 create policy views_read on db_views for select using (
   exists (select 1 from databases d where d.id = database_id and can_access_page(d.page_id, 'can_view')));
@@ -667,8 +679,8 @@ create policy views_write on db_views for all
   with check (exists (select 1 from databases d where d.id = database_id and can_access_page(d.page_id, 'can_edit')));
 
 create policy view_over_own on db_view_user_overrides for all
-  using (user_id = auth.uid()) with check (user_id = auth.uid());
--- db_unique_counters : uniquement via la fonction serveur next_unique_id (clé service).
+  using (user_id = app.uid()) with check (user_id = app.uid());
+-- db_unique_counters : uniquement via la fonction serveur next_unique_id (security definer).
 
 create policy disc_read on discussions for select using (can_access_page(page_id, 'can_view'));
 create policy disc_write on discussions for all
@@ -677,19 +689,19 @@ create policy disc_write on discussions for all
 create policy com_read on comments for select using (
   exists (select 1 from discussions d where d.id = discussion_id and can_access_page(d.page_id, 'can_view')));
 create policy com_insert on comments for insert with check (
-  author_id = auth.uid() and exists (
+  author_id = app.uid() and exists (
     select 1 from discussions d where d.id = discussion_id and can_access_page(d.page_id, 'can_comment')));
-create policy com_own on comments for update using (author_id = auth.uid());
-create policy com_del on comments for delete using (author_id = auth.uid());
+create policy com_own on comments for update using (author_id = app.uid());
+create policy com_del on comments for delete using (author_id = app.uid());
 
 create policy react_read on comment_reactions for select using (
   exists (select 1 from comments c join discussions d on d.id = c.discussion_id
            where c.id = comment_id and can_access_page(d.page_id, 'can_view')));
-create policy react_own on comment_reactions for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy react_own on comment_reactions for all using (user_id = app.uid()) with check (user_id = app.uid());
 
--- Les notifications sont créées par le serveur (clé service) ; l'utilisateur lit et marque les siennes.
-create policy notif_own on notifications for select using (user_id = auth.uid());
-create policy notif_mark on notifications for update using (user_id = auth.uid());
+-- Les notifications sont créées par le serveur (rôle propriétaire) ; l'utilisateur lit et marque les siennes.
+create policy notif_own on notifications for select using (user_id = app.uid());
+create policy notif_mark on notifications for update using (user_id = app.uid());
 
 create policy versions_read on page_versions for select using (can_access_page(page_id, 'can_view'));
 
@@ -702,7 +714,7 @@ create policy autorun_read on automation_runs for select using (
   exists (select 1 from automations a join databases d on d.id = a.database_id
            where a.id = automation_id and can_access_page(d.page_id, 'can_view')));
 
-create policy ai_own on ai_threads for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy ai_own on ai_threads for all using (user_id = app.uid()) with check (user_id = app.uid());
 
 -- ---------------------------------------------------------------------------
 -- Fonctions serveur
@@ -744,6 +756,16 @@ begin
   update pages
      set in_trash = trash,
          trashed_at = case when trash then now() else null end,
-         trashed_by = case when trash then auth.uid() else null end
+         trashed_by = case when trash then app.uid() else null end
    where id = pid or pid = any(path);
 end $$;
+
+-- ---------------------------------------------------------------------------
+-- Rôle de l'application (à exécuter une fois, avec le rôle propriétaire)
+-- Le mot de passe se règle dans la console Neon ou par l'API, jamais dans ce fichier.
+-- ---------------------------------------------------------------------------
+-- create role app_user login;
+-- grant usage on schema public, app to app_user;
+-- grant select, insert, update, delete on all tables in schema public to app_user;
+-- grant execute on all functions in schema public, app to app_user;
+-- alter default privileges in schema public grant select, insert, update, delete on tables to app_user;
