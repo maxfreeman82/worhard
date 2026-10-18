@@ -1,5 +1,7 @@
 // Glisser-déposer dans la sidebar : ranger une page dans une autre, puis interdiction des boucles.
 import { chromium } from 'playwright-core';
+import { readCode } from './login.mjs';
+const EMAIL = `dnd+${Date.now()}@e2e.test`;
 const base = 'http://localhost:3123';
 const browser = await chromium.launch({ channel: 'chrome' });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -9,9 +11,10 @@ let fail = 0;
 const check = (ok, msg) => { if (!ok) fail++; console.log(ok ? 'ok  ' : 'FAIL', msg); };
 
 await page.goto(base + '/login');
-await page.getByLabel('Adresse e-mail').fill('dnd@exemple.fr');
+await page.getByLabel('Adresse e-mail').fill(EMAIL);
 await page.getByRole('button', { name: /Continuer avec/ }).click();
-await page.getByLabel('Code de connexion').fill('111111');
+await page.getByLabel('Code de connexion').waitFor();
+await page.getByLabel('Code de connexion').fill(await readCode(EMAIL));
 await page.getByRole('button', { name: 'Se connecter' }).click();
 await page.waitForURL('**/onboarding');
 await page.getByLabel('Prénom et nom').fill('Test');

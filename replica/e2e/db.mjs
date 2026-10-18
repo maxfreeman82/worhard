@@ -1,6 +1,8 @@
 // Bases de données de bout en bout : tableau, cellules, filtre, tri, Kanban, calendrier, aperçu, base en ligne.
 // node replica/e2e/db.mjs <dossier des captures>   (serveur sur http://localhost:3123)
 import { chromium } from 'playwright-core';
+import { readCode } from './login.mjs';
+const EMAIL = `bdd+${Date.now()}@e2e.test`;
 const out = process.argv[2];
 const base = 'http://localhost:3123';
 const browser = await chromium.launch({ channel: 'chrome' });
@@ -17,9 +19,10 @@ const db = () => page.locator('[data-db-view]:visible').first();
 const bodyRows = () => db().locator('[role="rowgroup"] [role="row"]');
 
 await page.goto(base + '/login');
-await page.getByLabel('Adresse e-mail').fill('bdd@exemple.fr');
+await page.getByLabel('Adresse e-mail').fill(EMAIL);
 await page.getByRole('button', { name: /Continuer avec/ }).click();
-await page.getByLabel('Code de connexion').fill('222222');
+await page.getByLabel('Code de connexion').waitFor();
+await page.getByLabel('Code de connexion').fill(await readCode(EMAIL));
 await page.getByRole('button', { name: 'Se connecter' }).click();
 await page.waitForURL('**/onboarding');
 await page.getByLabel('Prénom et nom').fill('Awa Diop');

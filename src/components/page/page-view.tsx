@@ -136,9 +136,11 @@ function Loaded({ page }: { page: Page }) {
   );
 }
 
-function focusEditor() {
-  const el = document.querySelector<HTMLElement>(".page-editor [contenteditable=true]");
-  el?.focus();
+/** Place le curseur dans l'éditeur de la page visible ; attend son chargement (jusqu'à 2 s). */
+function focusEditor(tries = 20) {
+  const el = [...document.querySelectorAll<HTMLElement>(".page-editor [contenteditable=true]")].find((e) => e.offsetParent !== null);
+  if (el) el.focus();
+  else if (tries > 0) setTimeout(() => focusEditor(tries - 1), 100);
 }
 
 function TitleInput({ page, editable, onEnter }: { page: Page; editable: boolean; onEnter: () => void }) {

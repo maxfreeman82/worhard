@@ -10,7 +10,8 @@
     "test": "node --test src/**/*.test.ts",
     "db:setup-role": "node --env-file=.env.local scripts/setup-app-role.mjs",
     "db:migrate": "node --env-file=.env.local scripts/migrate.mjs",
-    "db:test": "node db/schema.test.mjs db/migrations/0001_init.sql"
+    "db:test": "node db/schema.test.mjs db/migrations",
+    "test:e2e": "npm run build && bash replica/e2e/run-all.sh"
   },
   "dependencies": {
     "@blocknote/core": "^0.56.0",
@@ -29,12 +30,14 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.15",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
+    "playwright-core": "^1.56.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

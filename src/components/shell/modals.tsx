@@ -363,20 +363,20 @@ function SettingsBody() {
       </Group>
       <Group title="Données">
         <p className="text-sm text-muted">
-          Version locale : tout est enregistré dans ce navigateur, sur cet appareil. Rien n&apos;est envoyé sur un serveur.
+          Vos pages sont enregistrées sur le serveur de l&apos;espace (base Neon). Les fichiers importés restent pour l&apos;instant sur cet appareil.
         </p>
         {confirmReset ? (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm text-danger">Toutes les pages et tous les fichiers seront effacés.</span>
+            <span className="text-sm text-danger">Les fichiers importés sur cet appareil seront effacés et vous serez déconnecté.</span>
             <Button
               variant="danger"
               onClick={async () => {
                 await resetEverything();
-                toast({ title: "Données effacées", tone: "info" });
+                toast({ title: "Appareil oublié", tone: "info" });
                 router.replace("/login");
               }}
             >
-              Tout effacer
+              Oublier cet appareil
             </Button>
             <Button variant="ghost" onClick={() => setConfirmReset(false)}>
               Annuler
@@ -385,7 +385,7 @@ function SettingsBody() {
         ) : (
           <div>
             <Button variant="danger" onClick={() => setConfirmReset(true)}>
-              Effacer les données locales…
+              Oublier cet appareil…
             </Button>
           </div>
         )}

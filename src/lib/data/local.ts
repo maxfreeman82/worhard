@@ -1,8 +1,9 @@
-// Implémentation locale de la couche de données : tout vit dans le navigateur
-// (localStorage pour l'état, IndexedDB pour les fichiers). Mêmes opérations que les
-// server actions prévues dans replica/architecture.md, pour que la version Neon la remplace
-// sans toucher aux écrans.
+// Couche de données côté client : un cache de l'espace de travail, lu de façon synchrone par les écrans,
+// chargé depuis le serveur (/api/bootstrap, Neon) et dont chaque modification est renvoyée par lots
+// (/api/sync). Les règles d'accès sont appliquées par Postgres (RLS) : le serveur refuse ce qui n'est pas permis.
+// Les fichiers importés restent pour l'instant dans IndexedDB (stockage serveur à brancher : Vercel Blob).
 
+import { authClient } from "@/lib/auth-client";
 import { seedPages } from "./seed";
 import {
   DataError,
@@ -30,9 +31,9 @@ import {
   type Workspace,
 } from "./types";
 
-const STORAGE_KEY = "ws:v1";
-const TRASH_RETENTION_DAYS = 30;
 const RECENT_MAX = 20;
+const REFRESH_MS = 30_000;
+const FLUSH_DELAY_MS = 400;
 
 /** Page telle que stockée : `position` ordonne les sœurs, `contentVersion` détecte les conflits d'édition. */
 type Stored = Page & { position: number; contentVersion: number };
@@ -41,6 +42,7 @@ type State = {
   signedIn: boolean;
   profile: Profile | null;
   workspace: Workspace | null;
+  members: { id: string; name: string; email: string }[];
   pages: Record<string, Stored>;
   favorites: string[];
   recent: string[];
@@ -52,6 +54,7 @@ const empty = (): State => ({
   signedIn: false,
   profile: null,
   workspace: null,
+  members: [],
   pages: {},
   favorites: [],
   recent: [],
@@ -59,33 +62,109 @@ const empty = (): State => ({
   views: {},
 });
 
-/* ------------------------------------------------------------ persistance */
+/* ------------------------------------------------------- cache et serveur */
 
 let state: State = empty();
-let loaded = false;
+let started = false;
+let ready = false;
 let version = 0;
 const listeners = new Set<() => void>();
 
-function load() {
-  if (loaded || typeof window === "undefined") return;
-  loaded = true;
+/** Événements de synchronisation pour l'interface (toasts). */
+export type SyncEvent = { kind: "error" | "conflict"; message: string };
+const syncListeners = new Set<(e: SyncEvent) => void>();
+export function onSyncEvent(l: (e: SyncEvent) => void) {
+  syncListeners.add(l);
+  return () => {
+    syncListeners.delete(l);
+  };
+}
+const notify = (e: SyncEvent) => syncListeners.forEach((l) => l(e));
+
+/** Dernier état connu du serveur : sert à calculer ce qu'il faut renvoyer. */
+let synced = {
+  pages: new Map<string, Stored>(),
+  databases: new Map<string, string>(),
+  views: new Map<string, string>(),
+  favorites: "[]",
+  profile: "",
+  workspace: "",
+};
+
+const profileKey = (s: State) => (s.profile ? JSON.stringify({ name: s.profile.name, theme: s.profile.theme, recent: s.recent }) : "");
+const workspaceKey = (s: State) => (s.workspace ? JSON.stringify({ name: s.workspace.name, icon: s.workspace.icon }) : "");
+
+function snapshot() {
+  synced = {
+    pages: new Map(Object.values(state.pages).map((p) => [p.id, p])),
+    databases: new Map(Object.values(state.databases).map((d) => [d.id, JSON.stringify(d)])),
+    views: new Map(Object.values(state.views).map((v) => [v.id, JSON.stringify(v)])),
+    favorites: JSON.stringify(state.favorites),
+    profile: profileKey(state),
+    workspace: workspaceKey(state),
+  };
+}
+
+type BootstrapResponse = {
+  profile: Profile;
+  workspace: Workspace | null;
+  members: State["members"];
+  pages: Stored[];
+  databases: Database[];
+  views: View[];
+  favorites: string[];
+  recent: string[];
+};
+
+/**
+ * Recharge tout depuis le serveur. Sans `force`, la réponse est ignorée si l'utilisateur a modifié quelque chose
+ * pendant la requête (sinon elle effacerait des changements pas encore envoyés) : le prochain rafraîchissement s'en charge.
+ */
+async function refresh(force = false) {
+  if (typeof window === "undefined") return;
+  const startVersion = version;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) state = { ...empty(), ...JSON.parse(raw) };
-  } catch {
-    state = empty();
-  }
-  purgeOldTrash();
-  // Un autre onglet a modifié les données : on recharge et on prévient les écrans.
-  window.addEventListener("storage", (e) => {
-    if (e.key !== STORAGE_KEY) return;
-    try {
-      state = e.newValue ? { ...empty(), ...JSON.parse(e.newValue) } : empty();
-    } catch {
+    const res = await fetch("/api/bootstrap", { cache: "no-store" });
+    if (!force && ready && (version !== startVersion || timer || flushing)) return;
+    const b: BootstrapResponse | { signedIn: false } = res.ok ? await res.json() : null;
+    if (res.status === 401 || (b && "signedIn" in b && b.signedIn === false)) {
       state = empty();
+    } else if (res.ok && b && "profile" in b) {
+      state = {
+        signedIn: true,
+        profile: b.profile,
+        workspace: b.workspace,
+        members: b.members,
+        pages: Object.fromEntries(b.pages.map((p) => [p.id, p])),
+        favorites: b.favorites,
+        recent: b.recent,
+        databases: Object.fromEntries(b.databases.map((d) => [d.id, d])),
+        views: Object.fromEntries(b.views.map((v) => [v.id, v])),
+      };
+    } else {
+      throw new Error(`HTTP ${res.status}`);
     }
-    emit();
-  });
+    snapshot();
+  } catch {
+    if (!ready) state = empty();
+    notify({ kind: "error", message: "Serveur injoignable : vos données n'ont pas pu être chargées." });
+  }
+  ready = true;
+  emit();
+}
+
+function load() {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  void refresh(true);
+  // Ce que les autres ont modifié apparaît au retour sur l'onglet et toutes les 30 secondes.
+  const maybeRefresh = () => {
+    if (document.visibilityState === "visible" && !flushing && !timer && state.signedIn) void refresh();
+  };
+  window.addEventListener("focus", maybeRefresh);
+  setInterval(maybeRefresh, REFRESH_MS);
+  // Fermeture de l'onglet : on envoie ce qui reste.
+  window.addEventListener("pagehide", flushUrgent);
 }
 
 function emit() {
@@ -93,14 +172,127 @@ function emit() {
   listeners.forEach((l) => l());
 }
 
-/** Écrit l'état. Lève DataError("quota") si le navigateur refuse (stockage plein). */
+let timer: ReturnType<typeof setTimeout> | null = null;
+let flushing = false;
+let again = false;
+/** Ce qu'aura le serveur une fois le lot en cours écrit (null si aucun lot en cours). */
+let inflight: typeof synced | null = null;
+
+/** Applique une modification : visible tout de suite, envoyée au serveur peu après (par lot). */
 function commit() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    throw new DataError("quota", "Le stockage du navigateur est plein.");
-  }
   emit();
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    timer = null;
+    void flush();
+  }, FLUSH_DELAY_MS);
+}
+
+function diff(base = synced) {
+  const pages = Object.values(state.pages).filter((p) => base.pages.get(p.id) !== p);
+  const deletePages = [...base.pages.keys()].filter((id) => !state.pages[id]);
+  const databases = Object.values(state.databases).filter((d) => base.databases.get(d.id) !== JSON.stringify(d));
+  const deleteDatabases = [...base.databases.keys()].filter((id) => !state.databases[id]);
+  const views = Object.values(state.views).filter((v) => base.views.get(v.id) !== JSON.stringify(v));
+  const deleteViews = [...base.views.keys()].filter((id) => !state.views[id]);
+  const favorites = JSON.stringify(state.favorites) !== base.favorites ? state.favorites : undefined;
+  const profile = profileKey(state) !== base.profile && state.profile ? { name: state.profile.name, theme: state.profile.theme, recent: state.recent } : undefined;
+  const workspace = workspaceKey(state) !== base.workspace && state.workspace ? { name: state.workspace.name, icon: state.workspace.icon } : undefined;
+  const any =
+    pages.length || deletePages.length || databases.length || deleteDatabases.length || views.length || deleteViews.length || favorites || profile || workspace;
+  return any ? { pages, deletePages, databases, deleteDatabases, views, deleteViews, favorites, profile, workspace } : null;
+}
+
+async function flush(): Promise<void> {
+  if (flushing) {
+    again = true;
+    return;
+  }
+  if (!state.signedIn || !state.workspace) return;
+  const changes = diff();
+  if (!changes) return;
+  flushing = true;
+  // Ce qui part maintenant devient la référence, même si l'utilisateur continue de taper.
+  const sent = {
+    pages: new Map(synced.pages),
+    databases: new Map(synced.databases),
+    views: new Map(synced.views),
+  };
+  for (const p of changes.pages) sent.pages.set(p.id, p);
+  for (const id of changes.deletePages) sent.pages.delete(id);
+  for (const d of changes.databases) sent.databases.set(d.id, JSON.stringify(d));
+  for (const id of changes.deleteDatabases) sent.databases.delete(id);
+  for (const v of changes.views) sent.views.set(v.id, JSON.stringify(v));
+  for (const id of changes.deleteViews) sent.views.delete(id);
+  inflight = {
+    ...sent,
+    favorites: changes.favorites ? JSON.stringify(changes.favorites) : synced.favorites,
+    profile: changes.profile ? JSON.stringify(changes.profile) : synced.profile,
+    workspace: changes.workspace ? JSON.stringify(changes.workspace) : synced.workspace,
+  };
+  try {
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workspaceId: state.workspace.id, ...changes }),
+      keepalive: JSON.stringify(changes).length < 60_000,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? "Enregistrement impossible.");
+    synced = inflight;
+    inflight = null;
+    if (body.conflicts?.length) {
+      inflight = null;
+      notify({ kind: "conflict", message: "Une page a été modifiée ailleurs entre-temps : la version enregistrée a été rechargée." });
+      flushing = false;
+      await refresh(true);
+      return;
+    }
+  } catch (e) {
+    notify({ kind: "error", message: `${e instanceof Error ? e.message : "Enregistrement impossible."} Les données du serveur ont été rechargées.` });
+    inflight = null;
+    flushing = false;
+    again = false;
+    await refresh(true);
+    return;
+  }
+  flushing = false;
+  if (again) {
+    again = false;
+    await flush();
+  }
+}
+
+/**
+ * Onglet qui se cache ou se ferme : on n'attend pas le lot en cours (la page peut disparaître avant).
+ * Ce qui reste part tout de suite, en keepalive ; le serveur écrit de façon idempotente, l'ordre n'importe pas.
+ */
+export function flushUrgent() {
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  if (!flushing || !inflight) return void flush();
+  if (!state.signedIn || !state.workspace) return;
+  const changes = diff(inflight);
+  if (!changes) return;
+  void fetch("/api/sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId: state.workspace.id, ...changes }),
+    keepalive: true,
+  }).catch(() => {});
+  // Si la page reste ouverte, le lot suivant renverra ces changements : sans effet, l'écriture est idempotente.
+  again = true;
+}
+
+/** Attend que tout soit enregistré (utile avant une navigation qui recharge). */
+export async function flushNow() {
+  if (timer) {
+    clearTimeout(timer);
+    timer = null;
+  }
+  await flush();
 }
 
 export function subscribe(listener: () => void) {
@@ -109,10 +301,10 @@ export function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-/** Change à chaque modification ; sert de snapshot pour useSyncExternalStore. */
+/** Change à chaque modification ; -1 tant que le premier chargement n'est pas terminé (= « chargement »). */
 export function getVersion() {
   load();
-  return version;
+  return ready ? version : -1;
 }
 
 /* --------------------------------------------------------------- outils */
@@ -208,23 +400,6 @@ function normalize(s: string) {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
-function purgeOldTrash() {
-  const limit = Date.now() - TRASH_RETENTION_DAYS * 86400000;
-  let changed = false;
-  for (const p of Object.values(state.pages)) {
-    if (p.inTrash && p.trashedAt && Date.parse(p.trashedAt) < limit) {
-      delete state.pages[p.id];
-      changed = true;
-    }
-  }
-  if (changed) collectGarbage();
-  if (changed) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {}
-  }
-}
-
 /* ---------------------------------------------------------------- compte */
 
 export function getSession(): { profile: Profile | null; workspace: Workspace | null } {
@@ -233,44 +408,59 @@ export function getSession(): { profile: Profile | null; workspace: Workspace | 
   return { profile: state.profile, workspace: state.workspace };
 }
 
-/** Mode local : le code n'est pas vérifié (aucun e-mail n'est envoyé). */
+const authError = (e: { message?: string; status?: number } | null | undefined, fallback: string) =>
+  new Error(e?.status === 429 ? "Trop de tentatives : réessayez dans une minute." : e?.message || fallback);
+
+/** Envoie un code de connexion par e-mail (Better Auth, plugin emailOTP). */
 export async function sendLoginCode(email: string) {
-  load();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Adresse e-mail invalide.");
+  const { error } = await authClient.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
+  if (error) throw authError(error, "Envoi du code impossible.");
   return { ok: true as const };
 }
 
+/** Vérifie le code : crée le compte au premier passage, ouvre la session (cookie http-only), puis charge l'espace. */
 export async function verifyLoginCode(email: string, code: string) {
-  load();
   if (!/^\d{6}$/.test(code)) throw new Error("Le code contient 6 chiffres.");
-  if (!state.profile || state.profile.email !== email) {
-    // Nouvel utilisateur (ou autre adresse) : on repart d'un état vierge.
-    state = { ...empty(), profile: { id: uid(), email, name: "", theme: state.profile?.theme ?? "system" } };
-  }
-  state.signedIn = true;
-  commit();
-  return { profile: state.profile!, needsWorkspace: !state.workspace };
+  const { error } = await authClient.signIn.emailOtp({ email, otp: code });
+  if (error) throw authError(error, "Code incorrect ou expiré.");
+  await refresh(true);
+  if (!state.profile) throw new Error("Connexion réussie, mais le profil n'a pas pu être chargé.");
+  return { profile: state.profile, needsWorkspace: !state.workspace };
 }
 
-/** Les données restent dans le navigateur : se reconnecter avec la même adresse les retrouve. */
 export async function signOut() {
-  load();
-  state.signedIn = false;
-  commit();
+  await flushNow();
+  await authClient.signOut();
+  state = empty();
+  snapshot();
+  emit();
 }
 
+/** Crée l'espace côté serveur, puis y dépose les pages de départ (envoyées comme n'importe quelle modification). */
 export async function createWorkspace(input: { userName: string; workspaceName: string }) {
   load();
   if (!state.profile) throw new DataError("unauthenticated", "Non connecté.");
+  const res = await fetch("/api/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userName: input.userName, workspaceName: input.workspaceName }),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Impossible de créer l'espace.");
+  const ws: Workspace = await res.json();
   state.profile = { ...state.profile, name: input.userName.trim() };
-  state.workspace = { id: uid(), name: input.workspaceName.trim() || "Mon espace", icon: null };
+  state.workspace = ws;
+  state.members = [{ id: state.profile.id, name: state.profile.name || state.profile.email, email: state.profile.email }];
+  // L'espace et le nom viennent d'être écrits par le serveur : ils sont la référence.
+  snapshot();
   state.pages = {};
   state.databases = {};
   state.views = {};
-  for (const seed of seedPages(state.workspace.id, state.profile.id)) state.pages[seed.id] = seed;
+  for (const seed of seedPages(ws.id, state.profile.id)) state.pages[seed.id] = seed;
   seedDatabase();
   commit();
-  return state.workspace;
+  await flushNow();
+  return ws;
 }
 
 export async function updateProfile(patch: Partial<Pick<Profile, "name" | "theme">>) {
@@ -278,6 +468,8 @@ export async function updateProfile(patch: Partial<Pick<Profile, "name" | "theme
   if (!state.profile) throw new DataError("unauthenticated", "Non connecté.");
   state.profile = { ...state.profile, ...patch };
   commit();
+  // Réglages : envoyés tout de suite (un rechargement juste après ne doit pas les perdre).
+  await flushNow();
   return state.profile;
 }
 
@@ -286,15 +478,14 @@ export async function updateWorkspace(patch: Partial<Pick<Workspace, "name" | "i
   const ws = requireWorkspace();
   state.workspace = { ...ws, ...patch };
   commit();
+  await flushNow();
   return state.workspace;
 }
 
-/** Efface toutes les données locales (réglages > zone de danger). */
+/** Oublie tout sur cet appareil (cache et fichiers locaux) et ferme la session. Les données du serveur restent. */
 export async function resetEverything() {
-  state = empty();
-  localStorage.removeItem(STORAGE_KEY);
   await clearFiles();
-  emit();
+  await signOut();
 }
 
 export function getTheme(): Theme {
@@ -844,8 +1035,7 @@ export function listRows(databaseId: string): Page[] {
 
 export function listPeople(): { id: string; name: string; email: string }[] {
   load();
-  // Version locale : un seul utilisateur. Les membres de l'espace arriveront avec la phase 2.
-  return state.profile ? [{ id: state.profile.id, name: state.profile.name || state.profile.email, email: state.profile.email }] : [];
+  return state.members;
 }
 
 export async function createRow(databaseId: string, init: { title?: string; props?: Record<string, PropValue>; after?: string | null } = {}) {

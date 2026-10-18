@@ -20,8 +20,9 @@ export default function OnboardingPage() {
     document.title = "Bienvenue";
   }, []);
 
+  // Next garde les pages visitées montées en arrière-plan : on ne redirige que si cette page est celle affichée.
   useEffect(() => {
-    if (session === undefined) return;
+    if (session === undefined || window.location.pathname !== "/onboarding") return;
     if (!session.profile) router.replace("/login");
     else if (session.workspace) router.replace("/home");
   }, [session, router]);
@@ -31,7 +32,9 @@ export default function OnboardingPage() {
     setBusy(true);
     try {
       await createWorkspace({ userName: name, workspaceName: wsName || `Espace de ${name.split(" ")[0]}` });
-      router.replace("/home");
+      // L'espace existe dès la réponse du serveur et l'effet ci-dessus redirige aussitôt ; l'envoi des pages
+      // de départ peut prendre quelques secondes de plus : ne pas ramener à l'accueil quelqu'un qui est déjà ailleurs.
+      if (window.location.pathname === "/onboarding") router.replace("/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Impossible de créer l'espace.");
       setBusy(false);

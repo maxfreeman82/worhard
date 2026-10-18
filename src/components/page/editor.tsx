@@ -7,7 +7,7 @@ import { BlockNoteView, type Theme } from "@blocknote/mantine";
 import { getDefaultReactSlashMenuItems, SuggestionMenuController, useCreateBlockNote, type DefaultReactSuggestionItem } from "@blocknote/react";
 import { FileText, MessageSquareQuote, Sheet, Table2 } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { blocksToText, createDatabase, createPage, getContentVersion, resolveFileUrl, savePageContent, uploadFile, type Page } from "@/lib/data";
+import { blocksToText, createDatabase, createPage, flushUrgent, getContentVersion, resolveFileUrl, savePageContent, uploadFile, type Page } from "@/lib/data";
 import { CalloutBlock, DatabaseBlock, PageBlock } from "./blocks";
 
 export const schema = BlockNoteSchema.create({
@@ -79,11 +79,17 @@ export function PageEditor({
     [page.id],
   ) as Editor;
 
-  const flush = async () => {
-    if (!pending.current) return;
+  /** Enregistre le document ; `urgent` (onglet qui se ferme ou se cache) l'envoie au serveur sans attendre le lot suivant. */
+  const flush = async (urgent = false) => {
+    if (!pending.current) {
+      if (urgent) flushUrgent();
+      return;
+    }
     pending.current = false;
+    if (timer.current) clearTimeout(timer.current);
     const doc = editor.document;
     const res = await savePageContent(page.id, doc, blocksToText(doc), version.current);
+    if (urgent) flushUrgent();
     if (res.ok) {
       version.current = res.version;
       onStatus("saved");
@@ -98,12 +104,15 @@ export function PageEditor({
     }
   };
 
-  // Enregistre au départ de la page (changement de route, fermeture d'onglet).
+  // Enregistre au départ de la page (changement de route, onglet caché ou fermé).
   useEffect(() => {
-    const onHide = () => void flush();
+    const onHide = () => void flush(true);
+    const onVisibility = () => document.visibilityState === "hidden" && void flush(true);
     window.addEventListener("pagehide", onHide);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("pagehide", onHide);
+      document.removeEventListener("visibilitychange", onVisibility);
       if (timer.current) clearTimeout(timer.current);
       void flush();
     };

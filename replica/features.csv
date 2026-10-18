@@ -1,6 +1,6 @@
 feature,area,priority,original,clone,notes
-Inscription et connexion par e-mail (code magique),compte,must,yes,partial,"phase 1 ; version locale : aucun e-mail envoyé, tout code à 6 chiffres accepté ; vrai envoi avec /replica-backend"
-Connexion avec Google,compte,should,yes,no,phase 1
+Inscription et connexion par e-mail (code magique),compte,must,yes,partial,"Better Auth + Neon, session par cookie http-only ; envoi réel des e-mails dès RESEND_API_KEY (sinon code dans la console du serveur)"
+Connexion avec Google,compte,should,yes,partial,prête dans Better Auth ; il faut créer le client OAuth (GOOGLE_CLIENT_ID / SECRET)
 Création d'un espace de travail à l'onboarding,compte,must,yes,yes,"phase 1 ; S02, avec pages de départ"
 Plusieurs espaces de travail et sélecteur,compte,could,yes,no,phase 2
 Barre latérale avec arbre de pages dépliable,navigation,must,yes,yes,phase 1 ; S03

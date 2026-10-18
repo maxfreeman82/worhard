@@ -15,6 +15,8 @@ export const auth = betterAuth({
   database: owner(),
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL,
+  // Origines supplémentaires autorisées (ex. un port de test), séparées par des virgules.
+  trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",").map((o) => o.trim()).filter(Boolean) ?? [],
   // Les ids Better Auth sont des UUID : ils servent aussi d'id de profil (profiles.id).
   advanced: { database: { generateId: "uuid" } },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },

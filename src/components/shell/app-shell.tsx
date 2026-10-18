@@ -2,9 +2,9 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Skeleton, ToastProvider } from "@/components/ui/display";
+import { Skeleton, ToastProvider, useToast } from "@/components/ui/display";
 import { TooltipProvider } from "@/components/ui/overlay";
-import { useSession, useTheme } from "@/lib/data";
+import { onSyncEvent, useSession, useTheme } from "@/lib/data";
 import { MoveModal, SearchModal, SettingsModal, TemplatesModal, TrashModal } from "./modals";
 import { ShellCtx, type ShellApi, type ShellModal } from "./shell-context";
 import { Sidebar } from "./sidebar";
@@ -44,10 +44,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** Erreurs d'enregistrement et conflits renvoyés par le serveur : affichés en toast. */
+function useSyncToasts() {
+  const toast = useToast();
+  useEffect(() => onSyncEvent((e) => toast({ title: e.message, tone: e.kind === "error" ? "error" : "info" })), [toast]);
+}
+
 function Guarded({ children }: { children: ReactNode }) {
   const session = useSession();
   const router = useRouter();
   useApplyTheme();
+  useSyncToasts();
 
   const ready = session !== undefined;
   const signedIn = !!session?.profile;

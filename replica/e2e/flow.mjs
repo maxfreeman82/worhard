@@ -1,5 +1,7 @@
 // Parcours de bout en bout sur la version locale. Capture les écrans pour replica-diff.
 import { chromium } from 'playwright-core';
+import { readCode } from './login.mjs';
+const EMAIL = `awa+${Date.now()}@e2e.test`;
 const out = process.argv[2];
 const base = 'http://localhost:3123';
 const browser = await chromium.launch({ channel: 'chrome' });
@@ -16,9 +18,10 @@ const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
 await page.goto(base);
 await page.waitForURL('**/login');
 await shot('S01');
-await page.getByLabel('Adresse e-mail').fill('awa@exemple.fr');
+await page.getByLabel('Adresse e-mail').fill(EMAIL);
 await page.getByRole('button', { name: /Continuer avec/ }).click();
-await page.getByLabel('Code de connexion').fill('123456');
+await page.getByLabel('Code de connexion').waitFor();
+await page.getByLabel('Code de connexion').fill(await readCode(EMAIL));
 await page.getByRole('button', { name: 'Se connecter' }).click();
 await page.waitForURL('**/onboarding');
 await page.getByLabel('Prénom et nom').fill('Awa Diop');
@@ -129,7 +132,7 @@ check((await page.evaluate(() => document.documentElement.dataset.theme)) === 'd
 
 // Page introuvable
 await page.goto(base + '/p/00000000-0000-0000-0000-000000000000');
-await page.waitForTimeout(300);
+await page.getByText('Page introuvable').filter({ visible: true }).waitFor({ timeout: 10000 }).catch(() => {});
 check(await page.getByText('Page introuvable').filter({ visible: true }).isVisible(), 'page introuvable : état dédié');
 
 // Mobile 390 px : pas de débordement, tiroir

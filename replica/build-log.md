@@ -46,5 +46,9 @@ Vérifié le 2026-10-17 (phase 3) : `npm test` (13 tests du moteur de requêtes)
 et les parcours de la phase 1 (`flow.mjs`, `dnd.mjs`) repassent, sans erreur console.
 Bug trouvé : le menu « / » ne trouvait pas « base de données » tapé sans accent ; alias sans accents ajoutés.
 
-Score de parité (`parity.py`) : 57.7 / 100, 31 must-haves sur 45 (avant la phase 3 : 35.9, 21 sur 45). Les 14 manquants relèvent surtout
+Vérifié le 2026-10-18 (backend Neon) : `npm run test:e2e` — 63 contrôles dans Chrome contre la base Neon
+(pages 23, glisser-déposer 4, bases 22, backend à deux comptes 15), aucune erreur console ; `npm run db:test` 33 ;
+`npm test` 13. Neuf bugs trouvés et corrigés pendant la mise en route : voir `replica/backend.md`.
+
+Score de parité (`parity.py`) : 58.1 / 100 après le backend ; 57.7 / 100, 31 must-haves sur 45 (avant la phase 3 : 35.9, 21 sur 45). Les 14 manquants relèvent surtout
 de la phase 2 (partage, collaboration, temps réel), plus l'envoi réel du code de connexion.

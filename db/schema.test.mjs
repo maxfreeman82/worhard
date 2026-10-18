@@ -2,11 +2,14 @@ import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm';
 import fs from 'node:fs';
+import path from 'node:path';
 
 const db = new PGlite({ extensions: { pgcrypto, pg_trgm } });
 // Rôle de l'app, non propriétaire des tables : comme en production sur Neon, la RLS s'applique à lui.
 await db.exec(`create role app_user;`);
-await db.exec(fs.readFileSync(process.argv[2], 'utf8'));
+// Toutes les migrations, dans l'ordre (argument : le dossier db/migrations).
+const dir = process.argv[2];
+for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.sql')).sort()) await db.exec(fs.readFileSync(path.join(dir, f), 'utf8'));
 await db.exec(`grant usage on schema public, app to app_user;
   grant select, insert, update, delete on all tables in schema public to app_user;
   grant execute on all functions in schema public, app to app_user;`);
@@ -18,7 +21,7 @@ const U = {
   out: '00000000-0000-0000-0000-000000000005',
 };
 for (const [k, id] of Object.entries(U)) {
-  await db.exec(`insert into profiles(id,email,name) values ('${id}','${k}@x.fr','${k}');`);
+  await db.exec(`insert into "user"(id,name,email,"emailVerified") values ('${id}','${k}','${k}@x.fr',true); insert into profiles(id,email,name) values ('${id}','${k}@x.fr','${k}');`);
 }
 const one = async (sql) => (await db.query(sql)).rows[0];
 const ws = (await one(`insert into workspaces(name,created_by) values('W','${U.owner}') returning id`)).id;
@@ -74,6 +77,10 @@ await db.exec(`update pages set parent_page_id='${team.id}' where id='${teamChil
 // RLS avec le rôle app_user
 await asUser(U.mem);
 await db.exec('set role app_user');
+const visibleTs = (await db.query(`select name from teamspaces order by name`)).rows.map((r) => r.name);
+check(JSON.stringify(visibleTs) === JSON.stringify(["General", "RH"]), "RLS teamspaces : ouverte et fermée visibles par un membre -> " + JSON.stringify(visibleTs));
+const tsm = (await db.query(`select count(*)::int n from teamspace_members`)).rows[0].n;
+check(tsm === 1, 'RLS teamspace_members lisible sans récursion -> ' + tsm);
 const seen = (await db.query(`select title from pages order by title`)).rows.map((r) => r.title);
 check(!seen.includes('Salaires') && !seen.includes('Dossiers RH') && seen.includes('Mon journal'), 'RLS : mem voit ' + seen.join(', '));
 const sr = (await db.query(`select title from search_pages('${ws}','facture')`)).rows.map((r) => r.title);

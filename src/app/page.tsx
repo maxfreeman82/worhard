@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useSession } from "@/lib/data";
 
-// La session vit dans le navigateur : la redirection se fait côté client.
+// Aiguillage selon la session (chargée par la couche de données) : connexion, onboarding ou accueil.
 export default function Root() {
   const session = useSession();
   const router = useRouter();
   useEffect(() => {
-    if (session === undefined) return;
+    if (session === undefined || window.location.pathname !== "/") return;
     router.replace(!session.profile ? "/login" : session.workspace ? "/home" : "/onboarding");
   }, [session, router]);
   return null;

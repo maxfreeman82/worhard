@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { sendLoginCode, useSession, verifyLoginCode } from "@/lib/data";
 
-// S01. En mode local, aucun e-mail n'est envoyé : n'importe quel code à 6 chiffres est accepté.
+// S01. Connexion sans mot de passe : un code à 6 chiffres est envoyé par e-mail (Better Auth). Le compte est créé au premier code.
 export default function LoginPage() {
   const router = useRouter();
   const session = useSession();
@@ -21,7 +21,9 @@ export default function LoginPage() {
     document.title = "Connexion";
   }, []);
 
+  // Next garde les pages visitées montées en arrière-plan : on ne redirige que si cette page est celle affichée.
   useEffect(() => {
+    if (window.location.pathname !== "/login") return;
     if (session?.profile) router.replace(session.workspace ? "/home" : "/onboarding");
   }, [session, router]);
 
@@ -45,7 +47,8 @@ export default function LoginPage() {
     setError(null);
     try {
       const res = await verifyLoginCode(email.trim().toLowerCase(), code.trim());
-      router.replace(res.needsWorkspace ? "/onboarding" : "/home");
+      // L'effet ci-dessus a pu rediriger pendant l'attente : on ne navigue que si l'on est toujours ici.
+      if (window.location.pathname === "/login") router.replace(res.needsWorkspace ? "/onboarding" : "/home");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Code incorrect.");
       setBusy(false);
@@ -92,7 +95,7 @@ export default function LoginPage() {
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
               error={error ?? undefined}
-              hint="Version locale : aucun e-mail n'est envoyé, tout code à 6 chiffres fonctionne."
+              hint="Le code expire dans 10 minutes. Pensez à vérifier les indésirables."
             />
             <Button type="submit" variant="primary" size="lg" loading={busy} disabled={code.length !== 6}>
               Se connecter
