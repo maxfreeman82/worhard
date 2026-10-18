@@ -304,7 +304,7 @@ function CellEditor({
     case "relation":
       return <RelationPicker row={row} prop={prop} resolve={resolve} value={(value as string[] | null) ?? []} onSave={onSave} />;
     case "files":
-      return <FilesEditor value={(value as FileValue[] | null) ?? []} onSave={onSave} />;
+      return <FilesEditor rowId={row.id} value={(value as FileValue[] | null) ?? []} onSave={onSave} />;
     default:
       return <TextEditor prop={prop} value={value} onSave={onSave} onDone={onDone} />;
   }
@@ -706,7 +706,7 @@ function RelationPicker({ row, prop, resolve, value, onSave }: { row: Page; prop
   );
 }
 
-function FilesEditor({ value, onSave }: { value: FileValue[]; onSave: (v: PropValue) => Promise<void> }) {
+function FilesEditor({ rowId, value, onSave }: { rowId: string; value: FileValue[]; onSave: (v: PropValue) => Promise<void> }) {
   const input = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -753,7 +753,7 @@ function FilesEditor({ value, onSave }: { value: FileValue[]; onSave: (v: PropVa
           setBusy(true);
           try {
             const added: FileValue[] = [];
-            for (const f of files) added.push({ name: f.name, url: await uploadFile(f) });
+            for (const f of files) added.push({ name: f.name, url: await uploadFile(f, rowId) });
             await onSave([...value, ...added]);
           } catch (err) {
             toast({ title: err instanceof Error ? err.message : "Import impossible", tone: "error" });

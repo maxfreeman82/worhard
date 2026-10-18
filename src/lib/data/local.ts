@@ -32,7 +32,9 @@ import {
 } from "./types";
 
 const RECENT_MAX = 20;
-const REFRESH_MS = 30_000;
+/** Vérification des changements faits ailleurs (empreinte légère) et rechargement complet de secours. */
+const CHANGES_MS = 5_000;
+const REFRESH_MS = 60_000;
 const FLUSH_DELAY_MS = 400;
 
 /** Page telle que stockée : `position` ordonne les sœurs, `contentVersion` détecte les conflits d'édition. */
@@ -66,6 +68,8 @@ const empty = (): State => ({
 
 let state: State = empty();
 let started = false;
+/** Empreinte de l'espace connue du client (renvoyée par le serveur au chargement et après chaque envoi). */
+let lastFingerprint = "";
 let ready = false;
 let version = 0;
 const listeners = new Set<() => void>();
@@ -114,18 +118,19 @@ type BootstrapResponse = {
   views: View[];
   favorites: string[];
   recent: string[];
+  fingerprint: string;
 };
 
 /**
  * Recharge tout depuis le serveur. Sans `force`, la réponse est ignorée si l'utilisateur a modifié quelque chose
  * pendant la requête (sinon elle effacerait des changements pas encore envoyés) : le prochain rafraîchissement s'en charge.
  */
-async function refresh(force = false) {
-  if (typeof window === "undefined") return;
+async function refresh(force = false): Promise<boolean> {
+  if (typeof window === "undefined") return false;
   const startVersion = version;
   try {
     const res = await fetch("/api/bootstrap", { cache: "no-store" });
-    if (!force && ready && (version !== startVersion || timer || flushing)) return;
+    if (!force && ready && (version !== startVersion || timer || flushing)) return false;
     const b: BootstrapResponse | { signedIn: false } = res.ok ? await res.json() : null;
     if (res.status === 401 || (b && "signedIn" in b && b.signedIn === false)) {
       state = empty();
@@ -141,6 +146,7 @@ async function refresh(force = false) {
         databases: Object.fromEntries(b.databases.map((d) => [d.id, d])),
         views: Object.fromEntries(b.views.map((v) => [v.id, v])),
       };
+      lastFingerprint = b.fingerprint;
     } else {
       throw new Error(`HTTP ${res.status}`);
     }
@@ -148,20 +154,39 @@ async function refresh(force = false) {
   } catch {
     if (!ready) state = empty();
     notify({ kind: "error", message: "Serveur injoignable : vos données n'ont pas pu être chargées." });
+    ready = true;
+    emit();
+    return false;
   }
   ready = true;
   emit();
+  return true;
+}
+
+/** Quelqu'un d'autre (ou un autre appareil) a-t-il modifié l'espace ? Si oui, on recharge. */
+async function checkChanges() {
+  if (!state.signedIn || !state.workspace || flushing || timer || document.visibilityState !== "visible") return;
+  try {
+    const res = await fetch(`/api/changes?workspace=${state.workspace.id}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const { fingerprint } = await res.json();
+    if (fingerprint && fingerprint !== lastFingerprint) await refresh();
+  } catch {
+    // Hors ligne : on réessaiera au prochain tour.
+  }
 }
 
 function load() {
   if (started || typeof window === "undefined") return;
   started = true;
   void refresh(true);
-  // Ce que les autres ont modifié apparaît au retour sur l'onglet et toutes les 30 secondes.
+  // Ce que les autres ont modifié apparaît en quelques secondes (empreinte toutes les 5 s), au retour sur l'onglet,
+  // et au pire au rechargement complet de secours (toutes les 60 s).
   const maybeRefresh = () => {
     if (document.visibilityState === "visible" && !flushing && !timer && state.signedIn) void refresh();
   };
-  window.addEventListener("focus", maybeRefresh);
+  window.addEventListener("focus", () => void checkChanges());
+  setInterval(() => void checkChanges(), CHANGES_MS);
   setInterval(maybeRefresh, REFRESH_MS);
   // Fermeture de l'onglet : on envoie ce qui reste.
   window.addEventListener("pagehide", flushUrgent);
@@ -241,6 +266,8 @@ async function flush(): Promise<void> {
     if (!res.ok) throw new Error(body.error ?? "Enregistrement impossible.");
     synced = inflight;
     inflight = null;
+    // Nos propres écritures ne doivent pas déclencher de rechargement.
+    if (body.fingerprint) lastFingerprint = body.fingerprint;
     if (body.conflicts?.length) {
       inflight = null;
       notify({ kind: "conflict", message: "Une page a été modifiée ailleurs entre-temps : la version enregistrée a été rechargée." });
@@ -480,6 +507,22 @@ export async function updateWorkspace(patch: Partial<Pick<Workspace, "name" | "i
   commit();
   await flushNow();
   return state.workspace;
+}
+
+/** Supprime définitivement le compte (et les espaces dont on est le seul membre), puis vide le cache. */
+export async function deleteAccount() {
+  await flushNow();
+  const res = await fetch("/api/account", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: "SUPPRIMER" }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? "Suppression impossible.");
+  await clearFiles();
+  state = empty();
+  snapshot();
+  emit();
 }
 
 /** Oublie tout sur cet appareil (cache et fichiers locaux) et ferme la session. Les données du serveur restent. */
@@ -778,7 +821,7 @@ export function search(query: string, limit = 20): SearchHit[] {
 /* ---------------------------------------------------- fichiers (IndexedDB) */
 
 const FILE_DB = "ws-files";
-const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 function filesDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -790,21 +833,26 @@ function filesDb(): Promise<IDBDatabase> {
 }
 
 /** Stocke un fichier et renvoie une URL interne `local-file:<id>`, résolue à l'affichage. */
-export async function uploadFile(file: File): Promise<string> {
-  if (file.size > MAX_FILE_BYTES) throw new Error("Fichier trop lourd (20 Mo maximum en mode local).");
-  const id = uid();
-  const db = await filesDb();
-  await new Promise<void>((resolve, reject) => {
-    const tx = db.transaction("files", "readwrite");
-    tx.objectStore("files").put(file, id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-  return `local-file:${id}`;
+/**
+ * Importe un fichier sur le serveur (stocké dans Neon) et renvoie son URL `/api/files/<id>`, servie après contrôle d'accès.
+ * `pageId` rattache le fichier à sa page : supprimer la page le rend orphelin, et la purge planifiée l'efface.
+ */
+export async function uploadFile(file: File, pageId: string | null = null): Promise<string> {
+  if (file.size > MAX_FILE_BYTES) throw new Error("Fichier trop lourd (10 Mo maximum).");
+  const ws = requireWorkspace();
+  const form = new FormData();
+  form.set("file", file);
+  form.set("workspaceId", ws.id);
+  if (pageId && state.pages[pageId]) form.set("pageId", pageId);
+  const res = await fetch("/api/files", { method: "POST", body: form });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? "Import impossible.");
+  return body.url as string;
 }
 
 const objectUrls = new Map<string, string>();
 
+/** Les URL serveur s'utilisent telles quelles ; `local-file:` désigne un fichier importé avant le serveur, resté sur cet appareil. */
 export async function resolveFileUrl(url: string): Promise<string> {
   if (!url.startsWith("local-file:")) return url;
   const id = url.slice("local-file:".length);

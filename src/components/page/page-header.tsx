@@ -110,7 +110,7 @@ export function CoverPicker({ page, trigger }: { page: Page; trigger: React.Reac
             const f = e.target.files?.[0];
             if (!f) return;
             try {
-              const url = await uploadFile(f);
+              const url = await uploadFile(f, page.id);
               await updatePageMeta(page.id, { coverUrl: url, coverPosition: 0.5 });
               setOpen(false);
             } catch (err) {

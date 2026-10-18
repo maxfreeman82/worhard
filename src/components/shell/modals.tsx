@@ -9,6 +9,7 @@ import { EmptyState, useToast } from "@/components/ui/display";
 import { Input } from "@/components/ui/field";
 import { Modal, ModalContent } from "@/components/ui/overlay";
 import {
+  deleteAccount,
   deleteForever,
   movePage,
   resetEverything,
@@ -317,6 +318,9 @@ function SettingsBody() {
   const [name, setName] = useState(session?.profile?.name ?? "");
   const [wsName, setWsName] = useState(session?.workspace?.name ?? "");
   const [confirmReset, setConfirmReset] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
   const theme = session?.profile?.theme ?? "system";
 
   return (
@@ -386,6 +390,44 @@ function SettingsBody() {
           <div>
             <Button variant="danger" onClick={() => setConfirmReset(true)}>
               Oublier cet appareil…
+            </Button>
+          </div>
+        )}
+      </Group>
+      <Group title="Supprimer mon compte">
+        <p className="text-sm text-muted">
+          Supprime votre compte, votre profil et les espaces dont vous êtes le seul membre, avec toutes leurs pages et leurs fichiers.
+          C&apos;est définitif.
+        </p>
+        {deleting ? (
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              try {
+                await deleteAccount();
+                router.replace("/login");
+              } catch (err) {
+                toast({ title: err instanceof Error ? err.message : "Suppression impossible.", tone: "error" });
+                setBusy(false);
+              }
+            }}
+          >
+            <Input label="Tapez SUPPRIMER pour confirmer" value={typed} onChange={(e) => setTyped(e.target.value)} autoComplete="off" />
+            <div className="flex gap-2">
+              <Button type="submit" variant="danger" loading={busy} disabled={typed !== "SUPPRIMER"}>
+                Supprimer définitivement
+              </Button>
+              <Button variant="ghost" onClick={() => setDeleting(false)}>
+                Annuler
+              </Button>
+            </div>
+          </form>
+        ) : (
+          <div>
+            <Button variant="danger" onClick={() => setDeleting(true)}>
+              Supprimer mon compte…
             </Button>
           </div>
         )}

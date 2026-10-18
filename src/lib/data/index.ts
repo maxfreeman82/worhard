@@ -29,6 +29,7 @@ export {
   updateView,
   createPage,
   createWorkspace,
+  deleteAccount,
   deleteForever,
   duplicatePage,
   getContentVersion,

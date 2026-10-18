@@ -20,7 +20,9 @@ for t in flow dnd db backend; do
   [ $first -eq 1 ] || sleep 65
   first=0
   echo "=== $t"
-  (SERVER_LOG="$LOG" timeout 400 node "replica/e2e/$t.mjs" "$SHOTS" 2>&1 | grep -vE "^\s+at ") || status=1
+  (SERVER_LOG="$LOG" timeout 400 node --env-file=.env.local "replica/e2e/$t.mjs" "$SHOTS" 2>&1 | grep -vE "^\s+at ") || status=1
+  # Un test qui échoue ne ferme pas toujours son navigateur : on supprime les profils Chrome temporaires laissés derrière.
+  rm -rf "${TMPDIR:-/tmp}"/playwright_chromiumdev_profile-* "${TEMP:-/tmp}"/playwright_chromiumdev_profile-* 2>/dev/null
 done
 echo "=== erreurs serveur"
 grep -E "^sync:|SERVER_ERROR" "$LOG" || echo "aucune"

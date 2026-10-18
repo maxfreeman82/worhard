@@ -6,6 +6,27 @@ import { asOwner, asUser } from "./db";
 
 /* --------------------------------------------------------------- lecture */
 
+/**
+ * Empreinte de l'espace : change dès qu'une page, une base, une vue, l'espace ou ses membres changent.
+ * Le client la compare toutes les 5 s pour savoir s'il doit recharger (lecture bon marché, sous RLS).
+ */
+export async function fingerprint(c: PoolClient, workspaceId: string): Promise<string> {
+  const r = await c.query(
+    `select concat_ws('|',
+       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from pages where workspace_id = $1),
+       (select count(*) || ':' || coalesce(max(updated_at)::text, '') from databases where workspace_id = $1),
+       (select count(*) || ':' || coalesce(max(v.updated_at)::text, '') from db_views v join databases d on d.id = v.database_id where d.workspace_id = $1),
+       (select updated_at::text from workspaces where id = $1),
+       (select count(*)::text from workspace_members where workspace_id = $1)) as f`,
+    [workspaceId],
+  );
+  return r.rows[0].f as string;
+}
+
+export async function loadFingerprint(userId: string, workspaceId: string) {
+  return asUser(userId, (c) => fingerprint(c, workspaceId));
+}
+
 export type Bootstrap = {
   profile: Profile;
   workspace: Workspace | null;
@@ -15,6 +36,7 @@ export type Bootstrap = {
   views: View[];
   favorites: string[];
   recent: string[];
+  fingerprint: string;
 };
 
 type PageRow = {
@@ -87,7 +109,7 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
         "select w.id, w.name, w.icon from workspaces w join workspace_members m on m.workspace_id = w.id where m.user_id = app.uid() order by m.created_at limit 1",
       )
     ).rows[0];
-    if (!w) return { profile, workspace: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [] };
+    if (!w) return { profile, workspace: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [], fingerprint: "" };
     const members = (
       await c.query("select p.id, coalesce(nullif(p.name, ''), p.email) as name, p.email from workspace_members m join profiles p on p.id = m.user_id where m.workspace_id = $1", [w.id])
     ).rows;
@@ -117,7 +139,17 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
         }))
       : [];
     const favorites = (await c.query("select page_id from favorites where user_id = app.uid() order by position")).rows.map((r) => r.page_id);
-    return { profile, workspace: { id: w.id, name: w.name, icon: w.icon }, members, pages, databases, views, favorites, recent: p.recent_pages ?? [] };
+    return {
+      profile,
+      workspace: { id: w.id, name: w.name, icon: w.icon },
+      members,
+      pages,
+      databases,
+      views,
+      favorites,
+      recent: p.recent_pages ?? [],
+      fingerprint: await fingerprint(c, w.id),
+    };
   });
 }
 
@@ -186,19 +218,12 @@ async function defaultTeamspace(c: PoolClient, workspaceId: string) {
   return r.rows[0]?.id as string | undefined;
 }
 
-/** Ordonne les pages pour que chaque parent soit écrit avant ses enfants. */
-function parentsFirst<T extends { id: string; parentId: string | null }>(pages: T[]) {
-  const byId = new Map(pages.map((p) => [p.id, p]));
-  const depth = (p: T, seen = 0): number => (p.parentId && byId.has(p.parentId) && seen < 100 ? 1 + depth(byId.get(p.parentId)!, seen + 1) : 0);
-  return [...pages].sort((a, b) => depth(a) - depth(b));
-}
-
 /**
  * Applique un lot de modifications au nom de l'utilisateur. Chaque écriture passe par la RLS :
  * une page que l'utilisateur ne peut pas modifier fait échouer tout le lot.
  * Renvoie les pages dont le contenu a été modifié ailleurs entre-temps (non écrasé).
  */
-export async function applySync(userId: string, b: SyncBatch): Promise<{ conflicts: string[] }> {
+export async function applySync(userId: string, b: SyncBatch): Promise<{ conflicts: string[]; fingerprint: string }> {
   return asUser(userId, async (c) => {
     const conflicts: string[] = [];
     if (b.profile) {
@@ -222,58 +247,74 @@ export async function applySync(userId: string, b: SyncBatch): Promise<{ conflic
         : [],
     );
 
-    const writePage = async (p: z.infer<typeof pageSchema>) => {
+    type InPage = z.infer<typeof pageSchema>;
+    const record = (p: InPage) => {
       const root = !p.parentId && !p.rowOf;
-      const values = [
-        p.id,
-        b.workspaceId,
-        root && p.section === "workspace" ? (teamspace ?? null) : null,
-        root && p.section === "private" ? userId : null,
-        p.parentId,
-        p.rowOf ?? null,
-        p.position,
-        p.title,
-        p.icon,
-        p.coverUrl,
-        p.coverPosition,
-        p.fullWidth,
-        p.smallText,
-        p.font,
-        p.isLocked,
-        JSON.stringify(p.content),
-        p.contentText,
-        p.contentVersion,
-        JSON.stringify(p.props ?? {}),
-        p.inTrash,
-        p.trashedAt,
-        p.createdAt,
-        p.updatedAt,
-      ];
-      const prev = existing.get(p.id);
-      if (!prev) {
-        const inserted = await c.query(
-          `insert into pages (id, workspace_id, teamspace_id, private_owner_id, parent_page_id, database_id, position, title, icon, cover_url,
-             cover_position, full_width, small_text, font, is_locked, content, content_text, content_version, props, in_trash, trashed_at,
-             created_at, updated_at, created_by, last_edited_by)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19::jsonb,$20,$21,$22,$23, app.uid(), app.uid())
-           -- Idempotent : un lot renvoyé, ou arrivé pendant qu'un autre écrit la même page, met à jour au lieu d'échouer.
-           -- La règle d'update s'applique à la ligne existante : une page d'un autre espace reste refusée.
-           on conflict (id) do update set
-             parent_page_id = excluded.parent_page_id, database_id = excluded.database_id, position = excluded.position,
-             title = excluded.title, icon = excluded.icon, cover_url = excluded.cover_url, cover_position = excluded.cover_position,
-             full_width = excluded.full_width, small_text = excluded.small_text, font = excluded.font, is_locked = excluded.is_locked,
-             content = case when excluded.content_version >= pages.content_version then excluded.content else pages.content end,
-             content_text = case when excluded.content_version >= pages.content_version then excluded.content_text else pages.content_text end,
-             content_version = greatest(pages.content_version, excluded.content_version),
-             props = excluded.props, in_trash = excluded.in_trash, trashed_at = excluded.trashed_at, last_edited_by = app.uid()
-           where pages.workspace_id = excluded.workspace_id
-           returning id`,
-          values,
-        );
-        // Aucune ligne écrite : l'id existe déjà dans un autre espace. Refus explicite, tout le lot est annulé.
-        if (inserted.rowCount === 0) throw new Error("permission denied: page d'un autre espace");
-        return;
-      }
+      return {
+        id: p.id,
+        workspace_id: b.workspaceId,
+        teamspace_id: root && p.section === "workspace" ? (teamspace ?? null) : null,
+        private_owner_id: root && p.section === "private" ? userId : null,
+        parent_page_id: p.parentId,
+        database_id: p.rowOf ?? null,
+        position: p.position,
+        title: p.title,
+        icon: p.icon,
+        cover_url: p.coverUrl,
+        cover_position: p.coverPosition,
+        full_width: p.fullWidth,
+        small_text: p.smallText,
+        font: p.font,
+        is_locked: p.isLocked,
+        content: p.content,
+        content_text: p.contentText,
+        content_version: p.contentVersion,
+        props: p.props ?? {},
+        in_trash: p.inTrash,
+        trashed_at: p.trashedAt,
+        created_at: p.createdAt,
+        updated_at: p.updatedAt,
+      };
+    };
+
+    /**
+     * Nouvelles pages : une seule requête pour tout un niveau de l'arbre (les parents sont écrits par la requête précédente,
+     * pour que le trigger de chemin et la règle d'accès les voient). Idempotent : une page renvoyée, ou arrivée pendant
+     * qu'un autre lot l'écrit, est mise à jour ; une page d'un autre espace n'est jamais écrite et fait échouer le lot.
+     */
+    const insertPages = async (list: InPage[]) => {
+      if (!list.length) return;
+      const res = await c.query(
+        `insert into pages (id, workspace_id, teamspace_id, private_owner_id, parent_page_id, database_id, position, title, icon, cover_url,
+           cover_position, full_width, small_text, font, is_locked, content, content_text, content_version, props, in_trash, trashed_at,
+           created_at, updated_at, created_by, last_edited_by)
+         select r.id, r.workspace_id, r.teamspace_id, r.private_owner_id, r.parent_page_id, r.database_id, r.position, r.title, r.icon,
+           r.cover_url, r.cover_position, r.full_width, r.small_text, r.font, r.is_locked, r.content, r.content_text, r.content_version,
+           r.props, r.in_trash, r.trashed_at, r.created_at, r.updated_at, app.uid(), app.uid()
+           from jsonb_to_recordset($1::jsonb) as r(id uuid, workspace_id uuid, teamspace_id uuid, private_owner_id uuid, parent_page_id uuid,
+             database_id uuid, position double precision, title text, icon text, cover_url text, cover_position real, full_width boolean,
+             small_text boolean, font text, is_locked boolean, content jsonb, content_text text, content_version integer, props jsonb,
+             in_trash boolean, trashed_at timestamptz, created_at timestamptz, updated_at timestamptz)
+         on conflict (id) do update set
+           parent_page_id = excluded.parent_page_id, database_id = excluded.database_id, position = excluded.position,
+           title = excluded.title, icon = excluded.icon, cover_url = excluded.cover_url, cover_position = excluded.cover_position,
+           full_width = excluded.full_width, small_text = excluded.small_text, font = excluded.font, is_locked = excluded.is_locked,
+           content = case when excluded.content_version >= pages.content_version then excluded.content else pages.content end,
+           content_text = case when excluded.content_version >= pages.content_version then excluded.content_text else pages.content_text end,
+           content_version = greatest(pages.content_version, excluded.content_version),
+           props = excluded.props, in_trash = excluded.in_trash, trashed_at = excluded.trashed_at, last_edited_by = app.uid()
+         where pages.workspace_id = excluded.workspace_id
+         returning id`,
+        [JSON.stringify(list.map(record))],
+      );
+      // Moins de lignes écrites que demandé : un id existe déjà dans un autre espace. Refus explicite, tout le lot est annulé.
+      if (res.rowCount !== list.length) throw new Error("permission denied: page d'un autre espace");
+    };
+
+    /** Page existante : mise à jour une par une (rare et petit), avec la règle de conflit sur le contenu. */
+    const updatePage = async (p: InPage) => {
+      const prev = existing.get(p.id)!;
+      const r = record(p);
       // Contenu : on n'écrase pas une version plus récente écrite par quelqu'un d'autre.
       const contentChanged = prev.content !== JSON.stringify(p.content);
       const keepServerContent = contentChanged && p.contentVersion <= prev.v;
@@ -287,36 +328,60 @@ export async function applySync(userId: string, b: SyncBatch): Promise<{ conflic
            props = $19::jsonb, in_trash = $20, trashed_at = $21, last_edited_by = app.uid()
          where id = $1 and workspace_id = $2`,
         // Les dates de création et de modification ne sont pas reprises du client : updated_at est posé par trigger.
-        [...values.slice(0, 21), keepServerContent],
+        [
+          r.id, r.workspace_id, r.teamspace_id, r.private_owner_id, r.parent_page_id, r.database_id, r.position, r.title, r.icon,
+          r.cover_url, r.cover_position, r.full_width, r.small_text, r.font, r.is_locked, JSON.stringify(r.content), r.content_text,
+          r.content_version, JSON.stringify(r.props), r.in_trash, r.trashed_at, keepServerContent,
+        ],
       );
     };
 
-    const plain = parentsFirst(b.pages.filter((p) => !p.rowOf));
+    /** Niveau de chaque nouvelle page dans le lot (0 = parent déjà en base ou racine). */
+    const levels = (list: InPage[]) => {
+      const byId = new Map(list.map((p) => [p.id, p]));
+      const depth = (p: InPage, n = 0): number => (p.parentId && byId.has(p.parentId) && n < 100 ? 1 + depth(byId.get(p.parentId)!, n + 1) : 0);
+      const out: InPage[][] = [];
+      for (const p of list) (out[depth(p)] ??= []).push(p);
+      return out.filter(Boolean);
+    };
+
+    const plain = b.pages.filter((p) => !p.rowOf);
     const rows = b.pages.filter((p) => p.rowOf);
-    for (const p of plain) await writePage(p);
-    for (const d of b.databases) {
+    for (const level of levels(plain.filter((p) => !existing.has(p.id)))) await insertPages(level);
+    for (const p of plain.filter((p) => existing.has(p.id))) await updatePage(p);
+    if (b.databases.length) {
       await c.query(
-        `insert into databases (id, workspace_id, page_id, is_inline, properties, next_unique_id) values ($1,$2,$3,$4,$5::jsonb,$6)
+        `insert into databases (id, workspace_id, page_id, is_inline, properties, next_unique_id)
+         select r.id, $2, r.page_id, r.is_inline, r.properties, r.next_unique_id
+           from jsonb_to_recordset($1::jsonb) as r(id uuid, page_id uuid, is_inline boolean, properties jsonb, next_unique_id integer)
          on conflict (id) do update set is_inline = excluded.is_inline, properties = excluded.properties,
            next_unique_id = greatest(databases.next_unique_id, excluded.next_unique_id)`,
-        [d.id, b.workspaceId, d.pageId, d.inline, JSON.stringify(d.properties), d.nextUniqueId],
+        [JSON.stringify(b.databases.map((d) => ({ id: d.id, page_id: d.pageId, is_inline: d.inline, properties: d.properties, next_unique_id: d.nextUniqueId }))), b.workspaceId],
       );
     }
-    for (const p of rows) await writePage(p);
-    for (const v of b.views) {
+    await insertPages(rows.filter((p) => !existing.has(p.id)));
+    for (const p of rows.filter((p) => existing.has(p.id))) await updatePage(p);
+    if (b.views.length) {
       await c.query(
-        `insert into db_views (id, database_id, name, type, position, config, created_by) values ($1,$2,$3,$4,$5,$6::jsonb, app.uid())
+        `insert into db_views (id, database_id, name, type, position, config, created_by)
+         select r.id, r.database_id, r.name, r.type, r.position, r.config, app.uid()
+           from jsonb_to_recordset($1::jsonb) as r(id uuid, database_id uuid, name text, type text, position double precision, config jsonb)
          on conflict (id) do update set name = excluded.name, type = excluded.type, position = excluded.position, config = excluded.config`,
-        [v.id, v.databaseId, v.name, v.type, v.position, JSON.stringify(v.config)],
+        [JSON.stringify(b.views.map((v) => ({ id: v.id, database_id: v.databaseId, name: v.name, type: v.type, position: v.position, config: v.config })))],
       );
     }
     if (b.favorites) {
       await c.query("delete from favorites where user_id = app.uid()");
-      for (const [i, pageId] of b.favorites.entries()) {
-        await c.query("insert into favorites (user_id, page_id, position) values (app.uid(), $1, $2) on conflict do nothing", [pageId, i]);
+      if (b.favorites.length) {
+        await c.query(
+          `insert into favorites (user_id, page_id, position)
+           select app.uid(), f.page_id, f.ord - 1 from unnest($1::uuid[]) with ordinality as f(page_id, ord)
+           on conflict do nothing`,
+          [b.favorites],
+        );
       }
     }
-    return { conflicts };
+    return { conflicts, fingerprint: await fingerprint(c, b.workspaceId) };
   });
 }
 

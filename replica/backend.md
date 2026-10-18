@@ -21,15 +21,16 @@ Sans `RESEND_API_KEY`, le code de connexion s'affiche dans la console du serveur
 | Base et migrations | fait | `db/migrations` 0001 (schéma) → 0004 ; `scripts/migrate.mjs` les suit dans `schema_migrations` |
 | Règles d'accès | fait | RLS sur toutes les tables ; l'app se connecte en `app_user` (non propriétaire, `rolbypassrls = false`) et pose `app.user_id` par transaction (`src/server/db.ts`) |
 | Test des règles | fait | `npm run db:test` : toutes les migrations dans PGlite, 33 contrôles (privé, teamspaces ouverte/fermée, sous-page restreinte, invité, admin, recherche, boucles) |
-| Tests de bout en bout | fait | `npm run test:e2e` : 63 contrôles dans Chrome contre Neon (pages, glisser-déposer, bases, backend à deux comptes) ; comptes `@e2e.test` supprimés à la fin |
+| Tests de bout en bout | fait | `npm run test:e2e` : 74 contrôles dans Chrome contre Neon (pages, glisser-déposer, bases, backend à deux comptes) ; comptes `@e2e.test` supprimés à la fin |
 | Connexion | fait | code à 6 chiffres par e-mail (Better Auth emailOTP), compte créé au premier code, cookie de session http-only, 30 jours |
 | Google | prêt, à activer | renseigner `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (client OAuth dans **ta** console Google Cloud, portée e-mail + profil seulement) |
 | E-mails | prêt, à activer | Resend par son API officielle ; il faut `RESEND_API_KEY` et `EMAIL_FROM` sur un domaine vérifié chez Resend |
 | API | fait | `GET /api/bootstrap`, `POST /api/sync` (lots validés par zod, 8 Mo max), `POST /api/workspace` |
 | Conflits d'édition | fait | `content_version` : un contenu écrit sur une version dépassée n'écrase pas le serveur, le client recharge et prévient |
-| Fichiers | **pas encore** | toujours dans IndexedDB (sur l'appareil) ; à brancher sur Vercel Blob (`BLOB_READ_WRITE_TOKEN`) |
-| Tâches planifiées | **pas encore** | purge de la corbeille à 30 jours, e-mails de notifications : Vercel Cron au déploiement |
-| Suppression de compte | à faire | la base est prête (supprimer `user` supprime le profil en cascade) ; il manque le bouton et la route |
+| Fichiers | fait | stockés dans Neon (`file_blobs`, migration 0005), 10 Mo max, HTML/SVG/scripts refusés ; servis par `/api/files/<id>` après contrôle d'accès (404 sinon), `nosniff`, téléchargement forcé hors images/PDF/médias. Les fichiers importés avant le serveur (`local-file:`) restent lisibles sur leur appareil |
+| Tâches planifiées | fait, actif au déploiement | `/api/cron/purge` (secret `CRON_SECRET`) : pages à la corbeille depuis 30 jours puis fichiers orphelins ; planifiée chaque nuit à 3 h UTC par `vercel.json` |
+| Suppression de compte | fait | Réglages > Supprimer mon compte (confirmation « SUPPRIMER ») ; supprime le compte, le profil, les sessions et les espaces dont on est le seul membre ; refusée si l'on est seul propriétaire d'un espace partagé |
+| Changements des autres | fait | empreinte de l'espace vérifiée toutes les 5 s (`/api/changes`), rechargement seulement si elle change ; rechargement complet de secours toutes les 60 s. L'édition simultanée d'une même page (curseurs, fusion) reste pour la phase 2 (Yjs) |
 | Sauvegardes | à vérifier | Neon garde un historique de restauration (« restore window ») selon l'offre : vérifier sa durée dans la console |
 
 ## Comment le client parle au serveur
@@ -42,10 +43,11 @@ apparaissent au retour sur l'onglet et toutes les 30 secondes (le temps réel ar
 
 Limites connues, à reprendre avant d'avoir beaucoup de données ou d'utilisateurs :
 
+- un fichier stocké dans Postgres compte dans le quota de la base Neon (0,5 Go sur l'offre gratuite) : passer à un stockage objet si les fichiers deviennent nombreux ;
 - le chargement initial contient tout le contenu des pages accessibles (simple, mais lourd au-delà de quelques milliers de pages) ;
 - deux personnes qui créent une ligne au même instant peuvent obtenir le même « ID unique » (compteur côté client) ;
 - l'envoi de codes est limité à 3 par minute **par IP** : une équipe derrière la même box partage cette limite.
-- chaque ligne est écrite par une requête séparée : l'envoi des pages de départ prend quelques secondes depuis l'Europe vers Neon (us-east-2). À regrouper, ou à rapprocher la base des utilisateurs (région Neon en Europe).
+- les nouvelles pages sont écrites par niveau de l'arbre en une requête chacun (au lieu d'une par page) ; la base reste en us-east-2 : une région Neon en Europe réduirait encore l'attente (se choisit à la création du projet).
 
 ## Bugs trouvés pendant la mise en route (corrigés)
 
@@ -67,7 +69,7 @@ Limites connues, à reprendre avant d'avoir beaucoup de données ou d'utilisateu
 - [x] autorisation vérifiée à chaque lecture et écriture (RLS) et testée avec un deuxième utilisateur : `replica/e2e/backend.mjs`
 - [x] limites de débit sur la connexion (envoi de code 3/min, connexion 10/min, global 60/min)
 - [ ] webhooks : aucun pour l'instant
-- [ ] fichiers : limites de taille et de type à appliquer côté serveur avec Vercel Blob
+- [x] fichiers : taille (10 Mo) et type vérifiés côté serveur, servis avec `nosniff`, CSP `sandbox` et téléchargement forcé
 - [x] pas de données personnelles dans les URL ; les erreurs renvoyées au client ne contiennent pas de détail SQL
 - [x] `npm audit --omit=dev` : 0 vulnérabilité (une alerte « high » reste dans les outils de build : `braces`)
 - [ ] politique de confidentialité : à rédiger avant d'ouvrir à d'autres personnes (sous-traitants : Neon, Vercel, Resend, Google si activé)
@@ -79,5 +81,5 @@ Limites connues, à reprendre avant d'avoir beaucoup de données ou d'utilisateu
 | --- | --- | --- |
 | Resend | compte, domaine d'envoi vérifié, clé API | `RESEND_API_KEY`, `EMAIL_FROM` |
 | Google Cloud (facultatif) | client OAuth « application Web », redirection `<url>/api/auth/callback/google` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| Vercel | projet relié au dépôt, stockage Blob | variables d'environnement du projet + `BLOB_READ_WRITE_TOKEN` |
+| Vercel | projet relié au dépôt | variables d'environnement du projet (dont `CRON_SECRET`) |
 | Neon | nouveau mot de passe pour `neondb_owner` | `DATABASE_URL_OWNER` |

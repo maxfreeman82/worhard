@@ -73,7 +73,7 @@ export function PageEditor({
       schema,
       dictionary,
       initialContent: page.content.length ? (page.content as never) : undefined,
-      uploadFile: (file) => uploadFile(file),
+      uploadFile: (file) => uploadFile(file, page.id),
       resolveFileUrl,
     },
     [page.id],

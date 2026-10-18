@@ -32,8 +32,8 @@ Imbrication des blocs (Tab / Maj+Tab),éditeur,must,yes,yes,phase 1
 Annuler / rétablir,éditeur,must,yes,yes,phase 1
 Sélection de plusieurs blocs,éditeur,must,yes,yes,phase 1
 Coller du texte riche / Markdown / images,éditeur,should,yes,partial,"phase 1 ; fourni par BlockNote, pas encore testé de bout en bout"
-Images (import / lien / redimensionner / légende),éditeur,must,yes,partial,phase 1 ; import stocké dans IndexedDB (20 Mo max) ; pas encore testé de bout en bout
-Fichiers / PDF / vidéo / audio,éditeur,should,yes,partial,"phase 1 ; fichier, vidéo, audio ; pas d'aperçu PDF"
+Images (import / lien / redimensionner / légende),éditeur,must,yes,partial,"phase 1 ; fichiers stockés sur le serveur (Neon), servis après contrôle d'accès ; import d'image par l'éditeur pas encore testé de bout en bout"
+Fichiers / PDF / vidéo / audio,éditeur,should,yes,partial,"phase 1 ; fichier, vidéo, audio stockés sur le serveur (10 Mo max) ; pas d'aperçu PDF"
 Signet (aperçu de lien) et intégrations (embed),éditeur,should,yes,no,phase 4
 Colonnes (blocs côte à côte),éditeur,should,yes,no,phase 1
 Tableau simple (non-BDD),éditeur,should,yes,yes,phase 1
