@@ -247,9 +247,17 @@ export async function applySync(userId: string, b: SyncBatch): Promise<{ conflic
 
     const teamspace = await defaultTeamspace(c, b.workspaceId);
     const ids = b.pages.map((p) => p.id);
-    const existing = new Map<string, { v: number; content: string }>(
+    // Le contenu est comparé par Postgres (égalité jsonb) : son texte (`content::text`) est réécrit avec des espaces
+    // et ne serait jamais identique au JSON du navigateur, ce qui faisait voir des conflits sur un contenu inchangé.
+    const existing = new Map<string, { v: number; same: boolean }>(
       ids.length
-        ? (await c.query("select id, content_version, content::text as content from pages where id = any($1::uuid[])", [ids])).rows.map((r) => [r.id, { v: r.content_version, content: r.content }])
+        ? (
+            await c.query(
+              `select p.id, p.content_version, p.content = r.content as same
+                 from pages p join jsonb_to_recordset($1::jsonb) as r(id uuid, content jsonb) on r.id = p.id`,
+              [JSON.stringify(b.pages.map((p) => ({ id: p.id, content: p.content })))],
+            )
+          ).rows.map((r) => [r.id, { v: r.content_version, same: r.same }])
         : [],
     );
 
@@ -322,7 +330,7 @@ export async function applySync(userId: string, b: SyncBatch): Promise<{ conflic
       const prev = existing.get(p.id)!;
       const r = record(p);
       // Contenu : on n'écrase pas une version plus récente écrite par quelqu'un d'autre.
-      const contentChanged = prev.content !== JSON.stringify(p.content);
+      const contentChanged = !prev.same;
       const keepServerContent = contentChanged && p.contentVersion <= prev.v;
       if (keepServerContent) conflicts.push(p.id);
       await c.query(

@@ -51,6 +51,17 @@ await editor(a).waitFor();
 check((await title(a).inputValue()) === "Secret de A", "A : titre relu depuis le serveur");
 check(await editor(a).getByText("Code du coffre : 4521").isVisible(), "A : contenu relu depuis le serveur");
 
+// Renvoyer une page au contenu inchangé (ici, seul le titre change) ne doit pas être pris pour un conflit.
+{
+  const boot = await (await a.request.get(base + "/api/bootstrap")).json();
+  const pg = boot.pages.find((p) => p.id === pageId);
+  const res = await (await a.request.post(base + "/api/sync", { data: { workspaceId: boot.workspace.id, pages: [{ ...pg, title: "Secret de A (bis)" }] } })).json();
+  check(Array.isArray(res.conflicts) && res.conflicts.length === 0, `contenu inchangé renvoyé : aucun conflit (${JSON.stringify(res.conflicts)})`);
+  const again = await (await a.request.get(base + "/api/bootstrap")).json();
+  check(again.pages.find((p) => p.id === pageId)?.title === "Secret de A (bis)", "contenu inchangé renvoyé : le nouveau titre est enregistré");
+  await a.request.post(base + "/api/sync", { data: { workspaceId: boot.workspace.id, pages: [{ ...pg, title: "Secret de A" }] } });
+}
+
 // Base de données : un changement de statut est enregistré
 await a.keyboard.press("Control+k");
 await a.getByLabel("Rechercher une page").fill("suivi des taches");
