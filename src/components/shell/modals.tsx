@@ -367,7 +367,7 @@ function SettingsBody() {
       </Group>
       <Group title="Données">
         <p className="text-sm text-muted">
-          Vos pages sont enregistrées sur le serveur de l&apos;espace (base Neon). Les fichiers importés restent pour l&apos;instant sur cet appareil.
+          Vos pages et vos fichiers sont enregistrés sur le serveur de l&apos;espace (base Neon). Oublier cet appareil ferme la session et vide son cache.
         </p>
         {confirmReset ? (
           <div className="flex flex-wrap items-center gap-2">

@@ -26,7 +26,7 @@ import { Menu, MenuCheckItem, MenuContent, MenuItem, MenuLabel, MenuSeparator, M
 import { BareTopBar, SidebarToggle } from "@/components/shell/bare-top-bar";
 import { useShell } from "@/components/shell/shell-context";
 import { usePageActions } from "@/components/shell/use-page-actions";
-import { deleteForever, markVisited, setTrash, updatePageMeta, useIsFavorite, usePage, usePath, type Page, type PageFont } from "@/lib/data";
+import { deleteForever, markVisited, setTrash, updatePageMeta, useCanEdit, useIsFavorite, usePage, usePath, type Page, type PageFont } from "@/lib/data";
 import type { SaveStatus } from "./editor";
 import { DatabaseView } from "@/components/database/database-view";
 import { RowProperties } from "@/components/database/row-properties";
@@ -65,7 +65,9 @@ function Loaded({ page }: { page: Page }) {
   const [status, setStatus] = useState<{ s: SaveStatus; detail?: string }>({ s: "saved" });
   const toast = useToast();
   const router = useRouter();
-  const editable = !page.isLocked && !page.inTrash;
+  // Lecture seule : page partagée d'un étudiant sans droit d'édition (le serveur refuserait la modification).
+  const canEdit = useCanEdit(page.id) !== false;
+  const editable = canEdit && !page.isLocked && !page.inTrash;
 
   const onStatus = (s: SaveStatus, detail?: string) => {
     setStatus({ s, detail });
@@ -207,6 +209,8 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
   const path = usePath(page.id) ?? [];
   const isFav = useIsFavorite(page.id);
   const actions = usePageActions();
+  const canEdit = useCanEdit(page.id) !== false;
+  const frozen = page.inTrash || !canEdit;
   const crumbs = path.length > 2 ? [path[0], null, path[path.length - 1]] : path;
 
   return (
@@ -233,6 +237,7 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
           {page.icon && <span aria-hidden>{page.icon}</span>}
           <span className="truncate">{page.title || "Sans titre"}</span>
           {page.isLocked && <Lock aria-label="Verrouillée" className="ml-1 size-3.5 shrink-0 text-muted" />}
+          {!canEdit && <span className="ml-1 shrink-0 rounded-xs bg-surface-hover px-1.5 py-0.5 text-xs text-muted">Lecture seule</span>}
         </span>
       </nav>
 
@@ -263,7 +268,7 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
               <button
                 key={f}
                 type="button"
-                disabled={page.inTrash}
+                disabled={frozen}
                 aria-pressed={page.font === f}
                 onClick={() => updatePageMeta(page.id, { font: f })}
                 className={clsx(
@@ -277,13 +282,13 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
             ))}
           </div>
           <MenuSeparator />
-          <MenuCheckItem checked={page.smallText} onCheckedChange={(v) => updatePageMeta(page.id, { smallText: v })}>
+          <MenuCheckItem disabled={frozen} checked={page.smallText} onCheckedChange={(v) => updatePageMeta(page.id, { smallText: v })}>
             <span className="flex items-center gap-2">
               <Type aria-hidden className="size-4 text-muted" />
               Petit texte
             </span>
           </MenuCheckItem>
-          <MenuCheckItem checked={page.fullWidth} onCheckedChange={(v) => updatePageMeta(page.id, { fullWidth: v })}>
+          <MenuCheckItem disabled={frozen} checked={page.fullWidth} onCheckedChange={(v) => updatePageMeta(page.id, { fullWidth: v })}>
             <span className="flex items-center gap-2">
               <ChevronsRight aria-hidden className="size-4 text-muted" />
               Pleine largeur
@@ -292,7 +297,7 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
           <MenuItem
             icon={page.isLocked ? <LockOpen className="size-4" /> : <Lock className="size-4" />}
             onSelect={() => updatePageMeta(page.id, { isLocked: !page.isLocked })}
-            disabled={page.inTrash}
+            disabled={frozen}
           >
             {page.isLocked ? "Déverrouiller la page" : "Verrouiller la page"}
           </MenuItem>
@@ -300,13 +305,13 @@ function TopBar({ page, status }: { page: Page; status: SaveStatus }) {
           <MenuItem icon={<Link2 className="size-4" />} onSelect={() => actions.copyLink(page.id)}>
             Copier le lien
           </MenuItem>
-          <MenuItem icon={<Copy className="size-4" />} onSelect={() => actions.duplicate(page.id)} disabled={page.inTrash}>
+          <MenuItem icon={<Copy className="size-4" />} onSelect={() => actions.duplicate(page.id)} disabled={frozen}>
             Dupliquer
           </MenuItem>
-          <MenuItem icon={<CornerUpRight className="size-4" />} onSelect={() => shell.openMove(page.id)} disabled={page.inTrash}>
+          <MenuItem icon={<CornerUpRight className="size-4" />} onSelect={() => shell.openMove(page.id)} disabled={frozen}>
             Déplacer vers…
           </MenuItem>
-          <MenuItem danger icon={<Trash2 className="size-4" />} onSelect={() => actions.trash(page.id)} disabled={page.inTrash}>
+          <MenuItem danger icon={<Trash2 className="size-4" />} onSelect={() => actions.trash(page.id)} disabled={frozen}>
             Supprimer
           </MenuItem>
           <MenuSeparator />

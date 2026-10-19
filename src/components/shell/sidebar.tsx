@@ -14,13 +14,14 @@ import {
   Settings,
   SquarePen,
   Trash2,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Kbd } from "@/components/ui/display";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger, Tooltip } from "@/components/ui/overlay";
-import { signOut, useFavorites, useSession, type Section } from "@/lib/data";
+import { signOut, useCanCreateShared, useFavorites, useIsWorkspaceAdmin, useSession, type Section } from "@/lib/data";
 import { PageTree, useSectionDrop } from "./page-tree";
 import { useShell } from "./shell-context";
 import { usePageActions } from "./use-page-actions";
@@ -65,6 +66,7 @@ export function Sidebar() {
 
   const ws = session?.workspace;
   const profile = session?.profile;
+  const isAdmin = useIsWorkspaceAdmin() === true;
 
   return (
     <>
@@ -142,6 +144,7 @@ export function Sidebar() {
           <NavButton icon={<Search className="size-4" />} label="Rechercher" hint={<Kbd>Ctrl K</Kbd>} onClick={() => shell.openModal("search")} />
           <NavLink href="/home" icon={<Home className="size-4" />} label="Accueil" />
           <NavLink href="/inbox" icon={<Inbox className="size-4" />} label="Boîte de réception" />
+          {isAdmin && <NavLink href="/admin" icon={<Users className="size-4" />} label="Membres" />}
         </nav>
 
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
@@ -232,16 +235,22 @@ function TreeSection({ label, section }: { label: string; section: Section }) {
   const actions = usePageActions();
   const shell = useShell();
   const drop = useSectionDrop(section);
+  // Étudiant en lecture seule : pas de page à la racine de l'espace partagé (ni par « + », ni par glisser-déposer).
+  const canAdd = useCanCreateShared() !== false || section === "private";
   return (
     <section className="mt-3">
       <SectionHeader
         label={label}
-        over={drop.over}
-        dropProps={drop.props}
-        onAdd={() => {
-          void actions.create(null, section);
-          shell.closeSidebarOnMobile();
-        }}
+        over={canAdd && drop.over}
+        dropProps={canAdd ? drop.props : undefined}
+        onAdd={
+          canAdd
+            ? () => {
+                void actions.create(null, section);
+                shell.closeSidebarOnMobile();
+              }
+            : undefined
+        }
       />
       <PageTree parentId={null} section={section} />
     </section>

@@ -109,5 +109,40 @@ check((await one(`select page_access_level('${row.id}') l`)).l === 'can_edit', '
 await asUser(U.out);
 check((await one(`select page_access_level('${row.id}') l`)).l === null, 'externe : aucun acces a la ligne');
 
+// Espace de classe (0006) : un étudiant en lecture seule, un autre promu admin.
+await asUser('');
+const E = { lecteur: '00000000-0000-0000-0000-000000000006', adjoint: '00000000-0000-0000-0000-000000000007' };
+for (const [k, id] of Object.entries(E)) {
+  await db.exec(`insert into "user"(id,name,email,"emailVerified") values ('${id}','${k}','${k}@x.fr',true); insert into profiles(id,email,name) values ('${id}','${k}@x.fr','${k}');`);
+}
+await db.exec(`insert into workspace_members(workspace_id,user_id,role,access) values ('${ws}','${E.lecteur}','member','can_view'),('${ws}','${E.adjoint}','admin','can_edit');`);
+const cours = await ins('teamspace_id,title', `'${ts}','Cours 1'`);
+const coursChild = await ins('parent_page_id,title', `'${cours.id}','Exercices'`);
+const classe = [
+  ['lecteur', 'cours', cours, 'can_view'], ['lecteur', 'coursChild', coursChild, 'can_view'],
+  ['lecteur', 'team(general)', team, 'can_view'], ['mem', 'cours', cours, 'can_edit'],
+  ['adjoint', 'cours', cours, 'full_access'], ['lecteur', 'priv(autrui)', priv, null],
+];
+for (const [u, name, p, want] of classe) {
+  const got = await lvl(E[u] ?? U[u], p.id);
+  check(got === want, `${u.padEnd(7)} ${name.padEnd(14)} -> ${got} (attendu ${want})`);
+}
+await asUser(E.lecteur);
+await db.exec('set role app_user');
+try {
+  await db.query(`insert into pages(workspace_id,teamspace_id,title) values('${ws}','${ts}','x')`);
+  check(false, 'lecture seule : creation a la racine partagee refusee');
+} catch { check(true, 'lecture seule : creation a la racine partagee refusee'); }
+try {
+  await db.query(`insert into pages(workspace_id,parent_page_id,title) values('${ws}','${cours.id}','x')`);
+  check(false, 'lecture seule : sous-page dans un cours refusee');
+} catch { check(true, 'lecture seule : sous-page dans un cours refusee'); }
+const upd = await db.query(`update pages set title='pirate' where id='${cours.id}'`);
+check(upd.affectedRows === 0, 'lecture seule : modification d\'un cours sans effet');
+const mine = await one(`insert into pages(workspace_id,private_owner_id,title) values('${ws}','${E.lecteur}','Mes notes') returning id`);
+check(!!mine.id, 'lecture seule : peut creer ses pages privees');
+await db.exec(`reset role`);
+await asUser('');
+
 console.log(fail ? `\n${fail} ECHEC(S)` : '\nTOUS LES TESTS PASSENT');
 process.exit(fail ? 1 : 0);

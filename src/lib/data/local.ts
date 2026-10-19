@@ -7,12 +7,17 @@ import { authClient } from "@/lib/auth-client";
 import { seedPages } from "./seed";
 import {
   DataError,
+  type AccessLevel,
+  type ClassInvite,
+  type ClassMember,
+  type ClassRole,
   type Database,
   type DateValue,
   type OptionColor,
   type Page,
   type PageContent,
   type PageMeta,
+  type Membership,
   type PageSummary,
   type Placement,
   type Profile,
@@ -44,6 +49,7 @@ type State = {
   signedIn: boolean;
   profile: Profile | null;
   workspace: Workspace | null;
+  me: Membership | null;
   members: { id: string; name: string; email: string }[];
   pages: Record<string, Stored>;
   favorites: string[];
@@ -56,6 +62,7 @@ const empty = (): State => ({
   signedIn: false,
   profile: null,
   workspace: null,
+  me: null,
   members: [],
   pages: {},
   favorites: [],
@@ -112,6 +119,7 @@ function snapshot() {
 type BootstrapResponse = {
   profile: Profile;
   workspace: Workspace | null;
+  me: Membership | null;
   members: State["members"];
   pages: Stored[];
   databases: Database[];
@@ -139,6 +147,7 @@ async function refresh(force = false): Promise<boolean> {
         signedIn: true,
         profile: b.profile,
         workspace: b.workspace,
+        me: b.me,
         members: b.members,
         pages: Object.fromEntries(b.pages.map((p) => [p.id, p])),
         favorites: b.favorites,
@@ -429,10 +438,29 @@ function normalize(s: string) {
 
 /* ---------------------------------------------------------------- compte */
 
-export function getSession(): { profile: Profile | null; workspace: Workspace | null } {
+export function getSession(): { profile: Profile | null; workspace: Workspace | null; me: Membership | null } {
   load();
-  if (!state.signedIn) return { profile: null, workspace: null };
-  return { profile: state.profile, workspace: state.workspace };
+  if (!state.signedIn) return { profile: null, workspace: null, me: null };
+  return { profile: state.profile, workspace: state.workspace, me: state.me };
+}
+
+const RANK: Record<AccessLevel, number> = { can_view: 1, can_comment: 2, can_edit: 3, full_access: 4 };
+
+/** L'utilisateur peut-il modifier cette page ? (Le serveur vérifie de toute façon chaque écriture.) */
+export function canEditPage(id: string): boolean {
+  const p = state.pages[id];
+  return !!p && (!p.access || RANK[p.access] >= RANK.can_edit);
+}
+
+/** Peut créer des pages à la racine de l'espace partagé : propriétaire, admin, ou membre en édition. */
+export function canCreateShared(): boolean {
+  const m = state.me;
+  return !m || m.role === "owner" || m.role === "admin" || (m.role === "member" && m.access === "can_edit");
+}
+
+/** Propriétaire ou admin : accès à l'admin de l'espace (membres et rôles). */
+export function isWorkspaceAdmin(): boolean {
+  return state.me?.role === "owner" || state.me?.role === "admin";
 }
 
 const authError = (e: { message?: string; status?: number } | null | undefined, fallback: string) =>
@@ -477,6 +505,7 @@ export async function createWorkspace(input: { userName: string; workspaceName: 
   const ws: Workspace = await res.json();
   state.profile = { ...state.profile, name: input.userName.trim() };
   state.workspace = ws;
+  state.me = { role: "owner", access: "can_edit" };
   state.members = [{ id: state.profile.id, name: state.profile.name || state.profile.email, email: state.profile.email }];
   // L'espace et le nom viennent d'être écrits par le serveur : ils sont la référence.
   snapshot();
@@ -508,6 +537,26 @@ export async function updateWorkspace(patch: Partial<Pick<Workspace, "name" | "i
   await flushNow();
   return state.workspace;
 }
+
+/* ------------------------------------------------- membres de l'espace */
+
+async function membersApi<T>(method: "GET" | "POST" | "PATCH" | "DELETE", body?: unknown): Promise<T> {
+  const res = await fetch("/api/members", {
+    method,
+    cache: "no-store",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error ?? "Opération impossible.");
+  return out as T;
+}
+
+export const listMembers = () => membersApi<{ members: ClassMember[]; invites: ClassInvite[] }>("GET");
+/** Ajoute une personne : elle pourra se connecter avec cette adresse et arrivera dans l'espace. */
+export const addMember = (input: { email: string; name: string; role: ClassRole }) => membersApi("POST", input);
+export const setMemberRole = (target: { memberId: string } | { inviteId: string }, role: ClassRole) => membersApi("PATCH", { ...target, role });
+export const removeMember = (target: { memberId: string } | { inviteId: string }) => membersApi("DELETE", target);
 
 /** Supprime définitivement le compte (et les espaces dont on est le seul membre), puis vide le cache. */
 export async function deleteAccount() {

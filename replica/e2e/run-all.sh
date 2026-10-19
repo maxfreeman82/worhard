@@ -11,12 +11,13 @@ LOG="$(mktemp)"
 cd "$ROOT"
 node --env-file=.env.local scripts/cleanup-e2e.mjs
 if curl -s -o /dev/null http://localhost:3123/login; then echo "Le port 3123 est déjà occupé : arrêter l'ancien serveur." >&2; exit 1; fi
-npx next start -p 3123 >"$LOG" 2>&1 &
+# Les comptes de test @e2e.test peuvent créer un espace ; les étudiants de test (@eleves.e2e.test) doivent être ajoutés.
+ADMIN_EMAILS="@e2e.test" npx next start -p 3123 >"$LOG" 2>&1 &
 SERVER=$!
 until curl -s -o /dev/null http://localhost:3123/login; do sleep 1; done
 status=0
 first=1
-for t in flow dnd db backend; do
+for t in flow dnd db backend class; do
   [ $first -eq 1 ] || sleep 65
   first=0
   echo "=== $t"

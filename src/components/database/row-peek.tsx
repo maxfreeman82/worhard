@@ -9,7 +9,7 @@ import { Dialog as RDialog } from "radix-ui";
 import { useEffect, useRef, useState } from "react";
 import { usePageActions } from "@/components/shell/use-page-actions";
 import { Skeleton, useToast } from "@/components/ui/display";
-import { updatePageMeta, usePage, type Page } from "@/lib/data";
+import { updatePageMeta, useCanEdit, usePage, type Page } from "@/lib/data";
 import { RowProperties } from "./row-properties";
 
 const PageEditor = dynamic(() => import("@/components/page/editor").then((m) => m.PageEditor), {
@@ -51,7 +51,7 @@ function PeekBody({ row, mode, onClose, focusTitle }: { row: Page; mode: "side" 
   const router = useRouter();
   const actions = usePageActions();
   const toast = useToast();
-  const editable = !row.isLocked && !row.inTrash;
+  const editable = useCanEdit(row.id) !== false && !row.isLocked && !row.inTrash;
   return (
     <>
       <div className="flex h-11 shrink-0 items-center gap-1 px-3">
@@ -65,12 +65,13 @@ function PeekBody({ row, mode, onClose, focusTitle }: { row: Page; mode: "side" 
         <span className="flex-1" />
         <button
           type="button"
+          disabled={!editable}
           onClick={() => {
             void actions.trash(row.id);
             onClose();
           }}
           aria-label="Supprimer la page"
-          className="flex size-7 items-center justify-center rounded-sm text-muted hover:bg-surface-hover hover:text-danger"
+          className="flex size-7 items-center justify-center rounded-sm text-muted hover:bg-surface-hover hover:text-danger disabled:pointer-events-none disabled:opacity-40"
         >
           <Trash2 aria-hidden className="size-4" />
         </button>

@@ -119,8 +119,8 @@ await page.getByRole('button', { name: 'Utiliser ce modèle' }).click();
 await page.waitForURL('**/p/**');
 check((await page.locator('textarea[aria-label="Titre de la page"]:visible').inputValue()) === 'Compte rendu de réunion', 'S15 page créée depuis un modèle');
 await page.getByRole('button', { name: 'Réglages' }).click();
-await page.getByText('Sombre', { exact: true }).click();
-await page.waitForTimeout(200);
+// Le thème est enregistré sur le serveur : on attend la réponse avant de recharger.
+await Promise.all([page.waitForResponse((r) => r.url().includes('/api/sync') && r.ok() && (r.request().postData() ?? '').includes('"theme":"dark"')), page.getByText('Sombre', { exact: true }).click()]);
 check((await page.evaluate(() => document.documentElement.dataset.theme)) === 'dark', 'S30 thème sombre appliqué');
 await shot('S30');
 await page.keyboard.press('Escape');

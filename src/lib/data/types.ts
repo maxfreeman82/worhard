@@ -16,6 +16,17 @@ export type Workspace = {
   icon: string | null;
 };
 
+/** Niveau d'accès à une page, du plus faible au plus fort. */
+export type AccessLevel = "can_view" | "can_comment" | "can_edit" | "full_access";
+
+/** Rôle dans l'espace. `access` plafonne les pages partagées pour un membre (lecture seule ou édition). */
+export type Membership = { role: "owner" | "admin" | "member" | "guest"; access: AccessLevel };
+
+/** Rôle choisi dans l'admin pour un étudiant (le propriétaire de l'espace a « owner »). */
+export type ClassRole = "viewer" | "editor" | "admin";
+export type ClassMember = { id: string; name: string; email: string; role: ClassRole | "owner"; you: boolean };
+export type ClassInvite = { id: string; name: string; email: string; role: ClassRole; createdAt: string };
+
 /** Racine d'une page de premier niveau : section « Espace de travail » (partagée) ou « Privé ». */
 export type Section = "workspace" | "private";
 
@@ -51,6 +62,8 @@ export type Page = {
   rowOf?: string | null;
   /** Valeurs des propriétés d'une ligne : { [propertyId]: valeur }. */
   props?: Record<string, PropValue>;
+  /** Accès de l'utilisateur, calculé par le serveur (absent pour une page créée sur cet appareil : la sienne). */
+  access?: AccessLevel;
 };
 
 /** Ce que la sidebar et les listes affichent : pas le contenu. */

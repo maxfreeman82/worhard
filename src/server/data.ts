@@ -1,7 +1,7 @@
 import "server-only";
 import type { PoolClient } from "@neondatabase/serverless";
 import { z } from "zod";
-import type { Database, Page, Profile, View, Workspace } from "@/lib/data/types";
+import type { AccessLevel, Database, Membership, Page, Profile, View, Workspace } from "@/lib/data/types";
 import { asOwner, asUser } from "./db";
 
 /* --------------------------------------------------------------- lecture */
@@ -30,6 +30,8 @@ export async function loadFingerprint(userId: string, workspaceId: string) {
 export type Bootstrap = {
   profile: Profile;
   workspace: Workspace | null;
+  /** Rôle de l'utilisateur dans l'espace (ce qu'il peut faire dans l'interface). */
+  me: Membership | null;
   members: { id: string; name: string; email: string }[];
   pages: (Page & { position: number; contentVersion: number })[];
   databases: Database[];
@@ -65,6 +67,7 @@ type PageRow = {
   updated_at: Date;
   created_by: string | null;
   last_edited_by: string | null;
+  access: AccessLevel | null;
 };
 
 const iso = (d: Date | null) => (d ? d.toISOString() : null);
@@ -95,6 +98,7 @@ function toPage(r: PageRow) {
     databaseOwnerOf: r.owner_db,
     rowOf: r.database_id,
     props: r.props ?? {},
+    access: r.access ?? "can_view",
     position: r.position,
   } satisfies Bootstrap["pages"][number];
 }
@@ -106,10 +110,10 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
     const profile: Profile = { id: p.id, email: p.email, name: p.name, theme: p.theme };
     const w = (
       await c.query(
-        "select w.id, w.name, w.icon from workspaces w join workspace_members m on m.workspace_id = w.id where m.user_id = app.uid() order by m.created_at limit 1",
+        "select w.id, w.name, w.icon, m.role, m.access from workspaces w join workspace_members m on m.workspace_id = w.id where m.user_id = app.uid() order by m.created_at limit 1",
       )
     ).rows[0];
-    if (!w) return { profile, workspace: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [], fingerprint: "" };
+    if (!w) return { profile, workspace: null, me: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [], fingerprint: "" };
     const members = (
       await c.query("select p.id, coalesce(nullif(p.name, ''), p.email) as name, p.email from workspace_members m join profiles p on p.id = m.user_id where m.workspace_id = $1", [w.id])
     ).rows;
@@ -118,7 +122,8 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
       await c.query<PageRow>(
         `select p.*,
                 (select d.id from databases d where d.page_id = p.id) as owner_db,
-                exists (select 1 from pages r where r.id = coalesce(p.path[1], p.id) and r.private_owner_id is not null) as is_private
+                exists (select 1 from pages r where r.id = coalesce(p.path[1], p.id) and r.private_owner_id is not null) as is_private,
+                page_row_access(p) as access
            from pages p
           where p.workspace_id = $1`,
         [w.id],
@@ -142,6 +147,7 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
     return {
       profile,
       workspace: { id: w.id, name: w.name, icon: w.icon },
+      me: { role: w.role, access: w.access },
       members,
       pages,
       databases,

@@ -20,7 +20,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type DragEvent } from "react";
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Popover, PopoverAnchor, PopoverContent } from "@/components/ui/overlay";
-import { DataError, movePage, updatePageMeta, useChildren, useIsFavorite, type PageSummary, type Section } from "@/lib/data";
+import { DataError, movePage, updatePageMeta, useCanEdit, useChildren, useIsFavorite, type PageSummary, type Section } from "@/lib/data";
 import { useShell } from "./shell-context";
 import { usePageActions } from "./use-page-actions";
 
@@ -58,6 +58,8 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
   const shell = useShell();
   const actions = usePageActions();
   const isFav = useIsFavorite(page.id);
+  // Page partagée en lecture seule : ni renommage, ni déplacement, ni sous-page (le serveur refuserait).
+  const canEdit = useCanEdit(page.id) !== false;
   const title = page.title || "Sans titre";
 
   const zoneOf = (e: DragEvent<HTMLDivElement>): DropZone => {
@@ -90,7 +92,7 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
       <Popover open={renaming} onOpenChange={setRenaming}>
         <PopoverAnchor asChild>
           <div
-            draggable={!shell.isMobile}
+            draggable={!shell.isMobile && canEdit}
             onDragStart={(e) => {
               dragged = page.id;
               e.dataTransfer.effectAllowed = "move";
@@ -101,7 +103,7 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
               setDrop(null);
             }}
             onDragOver={(e) => {
-              if (!dragged || dragged === page.id) return;
+              if (!dragged || dragged === page.id || !canEdit) return;
               e.preventDefault();
               setDrop(zoneOf(e));
             }}
@@ -157,13 +159,13 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
                     {isFav ? "Retirer des favoris" : "Ajouter aux favoris"}
                   </MenuItem>
                   <MenuSeparator />
-                  <MenuItem icon={<Copy className="size-4" />} onSelect={() => actions.duplicate(page.id)}>
+                  <MenuItem icon={<Copy className="size-4" />} disabled={!canEdit} onSelect={() => actions.duplicate(page.id)}>
                     Dupliquer
                   </MenuItem>
-                  <MenuItem icon={<PenLine className="size-4" />} onSelect={() => setTimeout(() => setRenaming(true), 0)}>
+                  <MenuItem icon={<PenLine className="size-4" />} disabled={!canEdit} onSelect={() => setTimeout(() => setRenaming(true), 0)}>
                     Renommer
                   </MenuItem>
-                  <MenuItem icon={<CornerUpRight className="size-4" />} onSelect={() => shell.openMove(page.id)}>
+                  <MenuItem icon={<CornerUpRight className="size-4" />} disabled={!canEdit} onSelect={() => shell.openMove(page.id)}>
                     Déplacer vers…
                   </MenuItem>
                   <MenuItem icon={<Link2 className="size-4" />} onSelect={() => actions.copyLink(page.id)}>
@@ -173,11 +175,12 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
                     Ouvrir dans un nouvel onglet
                   </MenuItem>
                   <MenuSeparator />
-                  <MenuItem danger icon={<Trash2 className="size-4" />} onSelect={() => actions.trash(page.id, { redirect: active })}>
+                  <MenuItem danger icon={<Trash2 className="size-4" />} disabled={!canEdit} onSelect={() => actions.trash(page.id, { redirect: active })}>
                     Supprimer
                   </MenuItem>
                 </MenuContent>
               </Menu>
+              {canEdit && (
               <button
                 type="button"
                 aria-label={`Ajouter une page dans ${title}`}
@@ -190,6 +193,7 @@ function TreeRow({ page, index, section, depth }: { page: PageSummary; index: nu
               >
                 <Plus aria-hidden className="size-4" />
               </button>
+              )}
             </span>
           </div>
         </PopoverAnchor>

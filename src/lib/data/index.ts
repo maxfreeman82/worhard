@@ -27,6 +27,10 @@ export {
   updateProperty,
   updateRowProp,
   updateView,
+  addMember,
+  listMembers,
+  removeMember,
+  setMemberRole,
   createPage,
   createWorkspace,
   deleteAccount,
@@ -68,6 +72,10 @@ function useData<T>(read: () => T, deps: unknown[]): T | undefined {
 }
 
 export const useSession = () => useData(() => store.getSession(), []);
+/** Droits de l'utilisateur, pour masquer ce qu'il ne peut pas faire (le serveur refuse de toute façon). */
+export const useCanEdit = (id: string | null | undefined) => useData(() => (id ? store.canEditPage(id) : false), [id]);
+export const useCanCreateShared = () => useData(() => store.canCreateShared(), []);
+export const useIsWorkspaceAdmin = () => useData(() => store.isWorkspaceAdmin(), []);
 export const usePage = (id: string) => useData(() => store.getPage(id), [id]);
 export const usePath = (id: string) => useData(() => store.getPath(id), [id]);
 export const useChildren = (parentId: string | null, section: "workspace" | "private" = "workspace") =>

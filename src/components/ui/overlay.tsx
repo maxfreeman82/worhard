@@ -46,14 +46,16 @@ export function MenuItem({
 export function MenuCheckItem({
   checked,
   onCheckedChange,
+  disabled,
   children,
 }: {
   checked: boolean;
   onCheckedChange: (v: boolean) => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
-    <DropdownMenu.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} className={itemClass}>
+    <DropdownMenu.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} className={itemClass}>
       <span className="flex-1 truncate">{children}</span>
       <DropdownMenu.ItemIndicator>
         <Check aria-hidden className="size-4" />
