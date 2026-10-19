@@ -1,11 +1,9 @@
 import "server-only";
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
-import { APIError, createAuthMiddleware } from "better-auth/api";
-import { emailOTP } from "better-auth/plugins";
-import { acceptInvitesFor, canSignIn, NOT_ALLOWED } from "./access";
+import { APIError } from "better-auth/api";
+import { acceptInvitesFor, isAdminEmail, isRemoved, REMOVED } from "./access";
 import { asOwner, owner } from "./db";
-import { sendEmail } from "./email";
 
 const google =
   process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -22,60 +20,44 @@ export const auth = betterAuth({
   // Les ids Better Auth sont des UUID : ils servent aussi d'id de profil (profiles.id).
   advanced: { database: { generateId: "uuid" } },
   session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
+  // Connexion par e-mail et mot de passe, sans envoi d'e-mail : l'inscription est libre,
+  // l'accès à l'espace se fait après validation par l'enseignant (page Membres).
+  emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: true },
   socialProviders: google,
   rateLimit: {
     enabled: true,
     window: 60,
     max: 60,
-    // Envoi de code : limité, pour éviter d'arroser une boîte mail.
-    customRules: { "/email-otp/send-verification-otp": { window: 60, max: 3 }, "/sign-in/email-otp": { window: 60, max: 10 } },
+    // Contre les essais de mots de passe en série et les inscriptions en masse.
+    customRules: { "/sign-in/email": { window: 60, max: 10 }, "/sign-up/email": { window: 60, max: 5 }, "/change-password": { window: 60, max: 5 } },
   },
-  // Espace sur invitation : une adresse non ajoutée par l'enseignant est refusée avant l'envoi du code.
-  hooks: {
-    before: createAuthMiddleware(async (ctx) => {
-      if (ctx.path !== "/email-otp/send-verification-otp" && ctx.path !== "/sign-in/email-otp") return;
-      const email = typeof ctx.body?.email === "string" ? ctx.body.email : "";
-      if (!(await canSignIn(email))) throw new APIError("FORBIDDEN", { message: NOT_ALLOWED });
-    }),
-  },
-  plugins: [
-    emailOTP({
-      otpLength: 6,
-      expiresIn: 600,
-      allowedAttempts: 5,
-      async sendVerificationOTP({ email, otp }) {
-        await sendEmail({
-          to: email,
-          subject: `Votre code de connexion : ${otp}`,
-          text: `Voici votre code de connexion à workhard : ${otp}\n\nIl expire dans 10 minutes. Si vous n'avez rien demandé, ignorez ce message.`,
-        });
-      },
-    }),
-    nextCookies(),
-  ],
+  plugins: [nextCookies()],
   databaseHooks: {
     user: {
       create: {
-        // Même règle pour toute création de compte (connexion Google comprise).
-        before: async (user) => {
-          if (!(await canSignIn(user.email))) throw new APIError("FORBIDDEN", { message: NOT_ALLOWED });
-        },
-        // Premier passage : le profil de l'app est créé avec le même id.
+        // Premier passage : le profil de l'app est créé avec le même id, en attente de validation
+        // (sauf l'enseignant, déclaré dans ADMIN_EMAILS).
         after: async (user) => {
+          const status = isAdminEmail(user.email) ? "approved" : "pending";
           await asOwner((c) =>
-            c.query("insert into profiles (id, email, name) values ($1, $2, $3) on conflict (id) do nothing", [user.id, user.email.toLowerCase(), user.name ?? ""]),
+            c.query("insert into profiles (id, email, name, access_status) values ($1, $2, $3, $4) on conflict (id) do nothing", [
+              user.id,
+              user.email.toLowerCase(),
+              user.name ?? "",
+              status,
+            ]),
           );
         },
       },
     },
     session: {
       create: {
-        // Une personne retirée de l'espace garde son compte mais ne peut plus ouvrir de session.
+        // Une personne retirée par l'enseignant garde son compte mais ne peut plus ouvrir de session.
         before: async (session) => {
           const email = (await owner().query(`select email from "user" where id = $1`, [session.userId])).rows[0]?.email ?? "";
-          if (!(await canSignIn(email))) throw new APIError("FORBIDDEN", { message: NOT_ALLOWED });
+          if (await isRemoved(email)) throw new APIError("FORBIDDEN", { message: REMOVED });
         },
-        // Invitations en attente : l'étudiant arrive directement dans l'espace de la classe.
+        // Adresse pré-autorisée par l'enseignant : validée tout de suite, l'étudiant arrive dans la classe.
         after: async (session) => {
           await acceptInvitesFor(session.userId);
         },

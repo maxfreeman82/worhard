@@ -8,8 +8,10 @@ import { seedPages } from "./seed";
 import {
   DataError,
   type AccessLevel,
+  type AccountState,
   type ClassInvite,
   type ClassMember,
+  type ClassRequest,
   type ClassRole,
   type Database,
   type DateValue,
@@ -48,6 +50,7 @@ type Stored = Page & { position: number; contentVersion: number };
 type State = {
   signedIn: boolean;
   profile: Profile | null;
+  account: AccountState | null;
   workspace: Workspace | null;
   me: Membership | null;
   members: { id: string; name: string; email: string }[];
@@ -61,6 +64,7 @@ type State = {
 const empty = (): State => ({
   signedIn: false,
   profile: null,
+  account: null,
   workspace: null,
   me: null,
   members: [],
@@ -118,6 +122,7 @@ function snapshot() {
 
 type BootstrapResponse = {
   profile: Profile;
+  account: AccountState;
   workspace: Workspace | null;
   me: Membership | null;
   members: State["members"];
@@ -146,6 +151,7 @@ async function refresh(force = false): Promise<boolean> {
       state = {
         signedIn: true,
         profile: b.profile,
+        account: b.account,
         workspace: b.workspace,
         me: b.me,
         members: b.members,
@@ -438,10 +444,28 @@ function normalize(s: string) {
 
 /* ---------------------------------------------------------------- compte */
 
-export function getSession(): { profile: Profile | null; workspace: Workspace | null; me: Membership | null } {
+export type Session = { profile: Profile | null; account: AccountState | null; workspace: Workspace | null; me: Membership | null };
+
+export function getSession(): Session {
   load();
-  if (!state.signedIn) return { profile: null, workspace: null, me: null };
-  return { profile: state.profile, workspace: state.workspace, me: state.me };
+  if (!state.signedIn) return { profile: null, account: null, workspace: null, me: null };
+  return { profile: state.profile, account: state.account, workspace: state.workspace, me: state.me };
+}
+
+/**
+ * Où envoyer l'utilisateur selon sa session : connexion, accueil de l'espace, création de l'espace (enseignant),
+ * ou attente de validation (étudiant inscrit, pas encore validé).
+ */
+export function destination(s: Session): "/login" | "/home" | "/onboarding" | "/attente" {
+  if (!s.profile) return "/login";
+  if (s.workspace) return "/home";
+  return s.account?.canCreateWorkspace ? "/onboarding" : "/attente";
+}
+
+/** Recharge l'état du compte (page d'attente : l'enseignant a-t-il validé ?). */
+export async function recheckAccess() {
+  await refresh(true);
+  return getSession();
 }
 
 const RANK: Record<AccessLevel, number> = { can_view: 1, can_comment: 2, can_edit: 3, full_access: 4 };
@@ -466,22 +490,47 @@ export function isWorkspaceAdmin(): boolean {
 const authError = (e: { message?: string; status?: number } | null | undefined, fallback: string) =>
   new Error(e?.status === 429 ? "Trop de tentatives : réessayez dans une minute." : e?.message || fallback);
 
-/** Envoie un code de connexion par e-mail (Better Auth, plugin emailOTP). */
-export async function sendLoginCode(email: string) {
+const PASSWORD_MIN = 8;
+
+/** Crée un compte (e-mail + mot de passe) et ouvre la session. L'accès à l'espace attend la validation de l'enseignant. */
+export async function signUpWithPassword(input: { name: string; email: string; password: string }) {
+  const email = input.email.trim().toLowerCase();
+  if (!input.name.trim()) throw new Error("Indiquez votre prénom et votre nom.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Adresse e-mail invalide.");
-  const { error } = await authClient.emailOtp.sendVerificationOtp({ email, type: "sign-in" });
-  if (error) throw authError(error, "Envoi du code impossible.");
-  return { ok: true as const };
+  if (input.password.length < PASSWORD_MIN) throw new Error(`Le mot de passe doit contenir au moins ${PASSWORD_MIN} caractères.`);
+  const { error } = await authClient.signUp.email({ email, password: input.password, name: input.name.trim() });
+  if (error) {
+    if (error.status === 422 || /exist/i.test(error.message ?? "")) throw new Error("Un compte existe déjà avec cette adresse : connectez-vous.");
+    throw authError(error, "Inscription impossible.");
+  }
+  await refresh(true);
+  if (!state.profile) throw new Error("Compte créé, mais le profil n'a pas pu être chargé.");
+  return getSession();
 }
 
-/** Vérifie le code : crée le compte au premier passage, ouvre la session (cookie http-only), puis charge l'espace. */
-export async function verifyLoginCode(email: string, code: string) {
-  if (!/^\d{6}$/.test(code)) throw new Error("Le code contient 6 chiffres.");
-  const { error } = await authClient.signIn.emailOtp({ email, otp: code });
-  if (error) throw authError(error, "Code incorrect ou expiré.");
+/** Ouvre la session avec l'e-mail et le mot de passe. */
+export async function signInWithPassword(emailInput: string, password: string) {
+  const email = emailInput.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Adresse e-mail invalide.");
+  if (!password) throw new Error("Saisissez votre mot de passe.");
+  const { error } = await authClient.signIn.email({ email, password });
+  if (error) {
+    if (error.status === 401) throw new Error("E-mail ou mot de passe incorrect.");
+    throw authError(error, "Connexion impossible.");
+  }
   await refresh(true);
   if (!state.profile) throw new Error("Connexion réussie, mais le profil n'a pas pu être chargé.");
-  return { profile: state.profile, needsWorkspace: !state.workspace };
+  return getSession();
+}
+
+/** Change le mot de passe de l'utilisateur connecté (les autres appareils sont déconnectés). */
+export async function changePassword(currentPassword: string, newPassword: string) {
+  if (newPassword.length < PASSWORD_MIN) throw new Error(`Le nouveau mot de passe doit contenir au moins ${PASSWORD_MIN} caractères.`);
+  const { error } = await authClient.changePassword({ currentPassword, newPassword, revokeOtherSessions: true });
+  if (error) {
+    if (/invalid|incorrect/i.test(error.message ?? "") || error.status === 400) throw new Error("Mot de passe actuel incorrect.");
+    throw authError(error, "Changement impossible.");
+  }
 }
 
 export async function signOut() {
@@ -552,11 +601,16 @@ async function membersApi<T>(method: "GET" | "POST" | "PATCH" | "DELETE", body?:
   return out as T;
 }
 
-export const listMembers = () => membersApi<{ members: ClassMember[]; invites: ClassInvite[] }>("GET");
+export const listMembers = () => membersApi<{ members: ClassMember[]; invites: ClassInvite[]; requests: ClassRequest[] }>("GET");
 /** Ajoute une personne : elle pourra se connecter avec cette adresse et arrivera dans l'espace. */
 export const addMember = (input: { email: string; name: string; role: ClassRole }) => membersApi("POST", input);
 export const setMemberRole = (target: { memberId: string } | { inviteId: string }, role: ClassRole) => membersApi("PATCH", { ...target, role });
 export const removeMember = (target: { memberId: string } | { inviteId: string }) => membersApi("DELETE", target);
+/** Demande d'accès d'un étudiant inscrit : la valider (avec un rôle) ou la refuser (son compte est supprimé). */
+export const approveRequest = (requestId: string, role: ClassRole) => membersApi("POST", { approve: requestId, role });
+export const refuseRequest = (requestId: string) => membersApi("DELETE", { requestId });
+/** Mot de passe oublié : un mot de passe provisoire, à transmettre à l'étudiant. */
+export const resetMemberPassword = (memberId: string) => membersApi<{ password: string }>("POST", { resetPassword: memberId });
 
 /** Supprime définitivement le compte (et les espaces dont on est le seul membre), puis vide le cache. */
 export async function deleteAccount() {

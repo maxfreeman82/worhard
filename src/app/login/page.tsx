@@ -1,58 +1,54 @@
 "use client";
 
-import { ArrowLeft, Mail } from "lucide-react";
+import { clsx } from "clsx";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { sendLoginCode, useSession, verifyLoginCode } from "@/lib/data";
+import { destination, signInWithPassword, signUpWithPassword, useSession } from "@/lib/data";
 
-// S01. Connexion sans mot de passe : un code à 6 chiffres est envoyé par e-mail (Better Auth). Le compte est créé au premier code.
+// S01. Connexion par e-mail et mot de passe. L'étudiant crée son compte ici ; il accède à l'espace
+// quand l'enseignant a validé sa demande (page Membres). Aucun e-mail n'est envoyé.
+type Mode = "signin" | "signup";
+
 export default function LoginPage() {
   const router = useRouter();
   const session = useSession();
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [mode, setMode] = useState<Mode>("signin");
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    document.title = "Connexion";
-  }, []);
+    document.title = mode === "signin" ? "Connexion" : "Créer un compte";
+  }, [mode]);
 
   // Next garde les pages visitées montées en arrière-plan : on ne redirige que si cette page est celle affichée.
   useEffect(() => {
     if (window.location.pathname !== "/login") return;
-    if (session?.profile) router.replace(session.workspace ? "/home" : "/onboarding");
+    if (session?.profile) router.replace(destination(session));
   }, [session, router]);
 
-  const submitEmail = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await sendLoginCode(email.trim().toLowerCase());
-      setStep("code");
+      const s = mode === "signin" ? await signInWithPassword(email, password) : await signUpWithPassword({ name, email, password });
+      // L'effet ci-dessus a pu rediriger pendant l'attente : on ne navigue que si l'on est toujours ici.
+      if (window.location.pathname === "/login") router.replace(destination(s));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Une erreur est survenue.");
-    } finally {
       setBusy(false);
     }
   };
 
-  const submitCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
+  const switchTo = (m: Mode) => {
+    setMode(m);
     setError(null);
-    try {
-      const res = await verifyLoginCode(email.trim().toLowerCase(), code.trim());
-      // L'effet ci-dessus a pu rediriger pendant l'attente : on ne navigue que si l'on est toujours ici.
-      if (window.location.pathname === "/login") router.replace(res.needsWorkspace ? "/onboarding" : "/home");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Code incorrect.");
-      setBusy(false);
-    }
+    setPassword("");
   };
 
   return (
@@ -61,58 +57,58 @@ export default function LoginPage() {
         <div aria-hidden className="mb-6 flex size-10 items-center justify-center rounded-md bg-fg text-lg font-bold text-bg">
           E
         </div>
-        <h1 className="text-h2 font-semibold">{step === "email" ? "Pensez, notez, partagez." : "Vérifiez vos e-mails"}</h1>
+        <h1 className="text-h2 font-semibold">{mode === "signin" ? "Pensez, notez, partagez." : "Créer votre compte"}</h1>
         <p className="mt-1 text-sm text-muted">
-          {step === "email" ? "Connectez-vous à votre espace de travail." : `Saisissez le code envoyé à ${email}.`}
+          {mode === "signin"
+            ? "Connectez-vous à l'espace de votre classe."
+            : "Votre enseignant validera votre accès. Vous pourrez ensuite vous connecter."}
         </p>
 
-        {step === "email" ? (
-          <form onSubmit={submitEmail} className="mt-6 flex flex-col gap-3" noValidate>
-            <Input
-              label="Adresse e-mail"
-              type="email"
-              autoComplete="email"
-              autoFocus
-              required
-              placeholder="nom@entreprise.fr"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={error ?? undefined}
-            />
-            <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!email.trim()} icon={<Mail className="size-4" />}>
-              Continuer avec l&apos;e-mail
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={submitCode} className="mt-6 flex flex-col gap-3" noValidate>
-            <Input
-              label="Code de connexion"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              autoFocus
-              maxLength={6}
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-              error={error ?? undefined}
-              hint="Le code expire dans 10 minutes. Pensez à vérifier les indésirables."
-            />
-            <Button type="submit" variant="primary" size="lg" loading={busy} disabled={code.length !== 6}>
-              Se connecter
-            </Button>
-            <Button
-              variant="ghost"
-              icon={<ArrowLeft className="size-4" />}
-              onClick={() => {
-                setStep("email");
-                setCode("");
-                setError(null);
-              }}
+        <div role="group" aria-label="Connexion ou inscription" className="mt-6 grid grid-cols-2 gap-1 rounded-md bg-surface p-1">
+          {(
+            [
+              ["signin", "Se connecter"],
+              ["signup", "Créer un compte"],
+            ] as [Mode, string][]
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              aria-pressed={mode === m}
+              onClick={() => switchTo(m)}
+              className={clsx("h-8 rounded-sm text-sm", mode === m ? "bg-bg font-medium text-fg shadow-sm" : "text-muted hover:text-fg")}
             >
-              Changer d&apos;adresse
-            </Button>
-          </form>
-        )}
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
+          {mode === "signup" && (
+            <Input label="Prénom et nom" autoComplete="name" autoFocus placeholder="Awa Diop" value={name} onChange={(e) => setName(e.target.value)} />
+          )}
+          <Input
+            label="Adresse e-mail"
+            type="email"
+            autoComplete="email"
+            autoFocus={mode === "signin"}
+            placeholder="prenom.nom@ecole.fr"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <Input
+            label="Mot de passe"
+            type="password"
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            hint={mode === "signup" ? "8 caractères au minimum." : "Oublié ? Demandez un mot de passe provisoire à votre enseignant."}
+            error={error ?? undefined}
+          />
+          <Button type="submit" variant="primary" size="lg" loading={busy} disabled={!email.trim() || !password || (mode === "signup" && !name.trim())}>
+            {mode === "signin" ? "Se connecter" : "Créer mon compte"}
+          </Button>
+        </form>
       </div>
     </main>
   );

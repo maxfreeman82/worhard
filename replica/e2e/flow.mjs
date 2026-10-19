@@ -1,6 +1,6 @@
 // Parcours de bout en bout sur la version locale. Capture les écrans pour replica-diff.
 import { chromium } from 'playwright-core';
-import { readCode } from './login.mjs';
+import { PASSWORD } from './login.mjs';
 const EMAIL = `awa+${Date.now()}@e2e.test`;
 const out = process.argv[2];
 const base = 'http://localhost:3123';
@@ -18,13 +18,13 @@ const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
 await page.goto(base);
 await page.waitForURL('**/login');
 await shot('S01');
-await page.getByLabel('Adresse e-mail').fill(EMAIL);
-await page.getByRole('button', { name: /Continuer avec/ }).click();
-await page.getByLabel('Code de connexion').waitFor();
-await page.getByLabel('Code de connexion').fill(await readCode(EMAIL));
-await page.getByRole('button', { name: 'Se connecter' }).click();
+await page.getByRole('button', { name: 'Créer un compte' }).click();
+await page.getByLabel('Prénom et nom', { exact: true }).filter({ visible: true }).fill('Awa Diop');
+await page.getByLabel('Adresse e-mail', { exact: true }).filter({ visible: true }).fill(EMAIL);
+await page.getByLabel('Mot de passe', { exact: true }).filter({ visible: true }).fill(PASSWORD);
+await page.locator('form').getByRole('button', { name: 'Créer mon compte' }).click();
 await page.waitForURL('**/onboarding');
-await page.getByLabel('Prénom et nom').fill('Awa Diop');
+await page.getByLabel('Prénom et nom', { exact: true }).filter({ visible: true }).fill('Awa Diop');
 await shot('S02');
 await page.getByRole('button', { name: 'Continuer' }).click();
 await page.getByLabel("Nom de l'espace").fill('Atelier Diop');

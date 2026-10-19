@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
-import { createWorkspace, useSession } from "@/lib/data";
+import { createWorkspace, destination, useSession } from "@/lib/data";
 
 // S02 : prénom puis nom de l'espace. L'espace est créé avec quelques pages de départ.
 export default function OnboardingPage() {
@@ -23,8 +23,9 @@ export default function OnboardingPage() {
   // Next garde les pages visitées montées en arrière-plan : on ne redirige que si cette page est celle affichée.
   useEffect(() => {
     if (session === undefined || window.location.pathname !== "/onboarding") return;
-    if (!session.profile) router.replace("/login");
-    else if (session.workspace) router.replace("/home");
+    // Seul l'enseignant (ADMIN_EMAILS) crée un espace ; un étudiant non validé attend.
+    const to = destination(session);
+    if (to !== "/onboarding") router.replace(to);
   }, [session, router]);
 
   const finish = async (e: React.FormEvent) => {

@@ -22,6 +22,12 @@ export type AccessLevel = "can_view" | "can_comment" | "can_edit" | "full_access
 /** Rôle dans l'espace. `access` plafonne les pages partagées pour un membre (lecture seule ou édition). */
 export type Membership = { role: "owner" | "admin" | "member" | "guest"; access: AccessLevel };
 
+/** Où en est le compte : en attente de validation par l'enseignant, validé ou retiré. */
+export type AccountState = { status: "pending" | "approved" | "removed"; canCreateWorkspace: boolean; pendingRequests: number };
+
+/** Compte créé par un étudiant, en attente de validation. */
+export type ClassRequest = { id: string; name: string; email: string; createdAt: string };
+
 /** Rôle choisi dans l'admin pour un étudiant (le propriétaire de l'espace a « owner »). */
 export type ClassRole = "viewer" | "editor" | "admin";
 export type ClassMember = { id: string; name: string; email: string; role: ClassRole | "owner"; you: boolean };

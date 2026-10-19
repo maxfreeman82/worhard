@@ -2,6 +2,7 @@ import "server-only";
 import type { PoolClient } from "@neondatabase/serverless";
 import { z } from "zod";
 import type { AccessLevel, Database, Membership, Page, Profile, View, Workspace } from "@/lib/data/types";
+import { isAdminEmail, pendingCount } from "./access";
 import { asOwner, asUser } from "./db";
 
 /* --------------------------------------------------------------- lecture */
@@ -17,7 +18,8 @@ export async function fingerprint(c: PoolClient, workspaceId: string): Promise<s
        (select count(*) || ':' || coalesce(max(updated_at)::text, '') from databases where workspace_id = $1),
        (select count(*) || ':' || coalesce(max(v.updated_at)::text, '') from db_views v join databases d on d.id = v.database_id where d.workspace_id = $1),
        (select updated_at::text from workspaces where id = $1),
-       (select count(*)::text from workspace_members where workspace_id = $1)) as f`,
+       (select count(*)::text from workspace_members where workspace_id = $1),
+       pending_requests_count()::text) as f`,
     [workspaceId],
   );
   return r.rows[0].f as string;
@@ -27,8 +29,12 @@ export async function loadFingerprint(userId: string, workspaceId: string) {
   return asUser(userId, (c) => fingerprint(c, workspaceId));
 }
 
+/** Où en est le compte : en attente de validation, validé ou retiré ; l'enseignant peut créer son espace. */
+export type AccountState = { status: "pending" | "approved" | "removed"; canCreateWorkspace: boolean; pendingRequests: number };
+
 export type Bootstrap = {
   profile: Profile;
+  account: AccountState;
   workspace: Workspace | null;
   /** Rôle de l'utilisateur dans l'espace (ce qu'il peut faire dans l'interface). */
   me: Membership | null;
@@ -104,16 +110,17 @@ function toPage(r: PageRow) {
 }
 
 export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
-  return asUser(userId, async (c) => {
-    const p = (await c.query("select id, email, name, theme, recent_pages from profiles where id = app.uid()")).rows[0];
+  const data = await asUser(userId, async (c) => {
+    const p = (await c.query("select id, email, name, theme, recent_pages, access_status from profiles where id = app.uid()")).rows[0];
     if (!p) return null;
     const profile: Profile = { id: p.id, email: p.email, name: p.name, theme: p.theme };
+    const account: AccountState = { status: p.access_status, canCreateWorkspace: isAdminEmail(p.email), pendingRequests: 0 };
     const w = (
       await c.query(
         "select w.id, w.name, w.icon, m.role, m.access from workspaces w join workspace_members m on m.workspace_id = w.id where m.user_id = app.uid() order by m.created_at limit 1",
       )
     ).rows[0];
-    if (!w) return { profile, workspace: null, me: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [], fingerprint: "" };
+    if (!w) return { profile, account, workspace: null, me: null, members: [], pages: [], databases: [], views: [], favorites: [], recent: [], fingerprint: "" };
     const members = (
       await c.query("select p.id, coalesce(nullif(p.name, ''), p.email) as name, p.email from workspace_members m join profiles p on p.id = m.user_id where m.workspace_id = $1", [w.id])
     ).rows;
@@ -146,6 +153,7 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
     const favorites = (await c.query("select page_id from favorites where user_id = app.uid() order by position")).rows.map((r) => r.page_id);
     return {
       profile,
+      account,
       workspace: { id: w.id, name: w.name, icon: w.icon },
       me: { role: w.role, access: w.access },
       members,
@@ -157,6 +165,9 @@ export async function loadBootstrap(userId: string): Promise<Bootstrap | null> {
       fingerprint: await fingerprint(c, w.id),
     };
   });
+  // Demandes d'accès en attente : badge de la page Membres, pour le propriétaire et les admins.
+  if (data?.me && (data.me.role === "owner" || data.me.role === "admin")) data.account.pendingRequests = await pendingCount(userId);
+  return data;
 }
 
 /* ------------------------------------------------------------- écriture */

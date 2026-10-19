@@ -3,7 +3,7 @@
 // Crée des comptes @e2e.test : lancer scripts/cleanup-e2e.mjs ensuite.
 import { Pool } from "@neondatabase/serverless";
 import { chromium } from "playwright-core";
-import { signUp, readCode } from "./login.mjs";
+import { logIn, signUp } from "./login.mjs";
 
 const base = "http://localhost:3123";
 const stamp = Date.now();
@@ -80,13 +80,7 @@ check(await a.locator('[data-db-view]:visible [role="row"]').filter({ hasText: "
 const ctxA2 = await browser.newContext();
 const a2 = await ctxA2.newPage();
 watch(a2, "A2");
-await a2.goto(base + "/login");
-await a2.getByLabel("Adresse e-mail").fill(A);
-await a2.getByRole("button", { name: /Continuer avec/ }).click();
-await a2.getByLabel("Code de connexion").waitFor();
-await a2.waitForTimeout(500);
-await a2.getByLabel("Code de connexion").fill(await readCode(A));
-await a2.getByRole("button", { name: "Se connecter" }).click();
+await logIn(a2, base, A);
 await a2.waitForURL("**/home");
 await a2.goto(pageUrl);
 await editor(a2).waitFor();

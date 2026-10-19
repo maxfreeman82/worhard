@@ -9,6 +9,7 @@ import { EmptyState, useToast } from "@/components/ui/display";
 import { Input } from "@/components/ui/field";
 import { Modal, ModalContent } from "@/components/ui/overlay";
 import {
+  changePassword,
   deleteAccount,
   deleteForever,
   movePage,
@@ -311,6 +312,51 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+function PasswordGroup() {
+  const toast = useToast();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <Group title="Mot de passe">
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setBusy(true);
+          setError(null);
+          try {
+            await changePassword(current, next);
+            setCurrent("");
+            setNext("");
+            toast({ title: "Mot de passe changé", tone: "success" });
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Changement impossible.");
+          }
+          setBusy(false);
+        }}
+      >
+        <Input label="Mot de passe actuel" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+        <Input
+          label="Nouveau mot de passe"
+          type="password"
+          autoComplete="new-password"
+          hint="8 caractères au minimum. Vos autres appareils seront déconnectés."
+          value={next}
+          onChange={(e) => setNext(e.target.value)}
+          error={error ?? undefined}
+        />
+        <div>
+          <Button type="submit" loading={busy} disabled={!current || !next}>
+            Changer le mot de passe
+          </Button>
+        </div>
+      </form>
+    </Group>
+  );
+}
+
 function SettingsBody() {
   const session = useSession();
   const toast = useToast();
@@ -334,6 +380,7 @@ function SettingsBody() {
           onBlur={() => name !== session?.profile?.name && updateProfile({ name: name.trim() })}
         />
       </Group>
+      <PasswordGroup />
       <Group title="Apparence">
         <fieldset className="flex flex-wrap gap-2">
           <legend className="sr-only">Thème</legend>

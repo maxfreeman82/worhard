@@ -144,7 +144,7 @@ export function Sidebar() {
           <NavButton icon={<Search className="size-4" />} label="Rechercher" hint={<Kbd>Ctrl K</Kbd>} onClick={() => shell.openModal("search")} />
           <NavLink href="/home" icon={<Home className="size-4" />} label="Accueil" />
           <NavLink href="/inbox" icon={<Inbox className="size-4" />} label="Boîte de réception" />
-          {isAdmin && <NavLink href="/admin" icon={<Users className="size-4" />} label="Membres" />}
+          {isAdmin && <NavLink href="/admin" icon={<Users className="size-4" />} label="Membres" badge={session?.account?.pendingRequests} />}
         </nav>
 
         <div className="mt-2 min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
@@ -179,7 +179,7 @@ export function Sidebar() {
   );
 }
 
-function NavLink({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
+function NavLink({ href, icon, label, badge }: { href: string; icon: ReactNode; label: string; badge?: number }) {
   const pathname = usePathname();
   const shell = useShell();
   const active = pathname === href;
@@ -196,7 +196,12 @@ function NavLink({ href, icon, label }: { href: string; icon: ReactNode; label: 
       <span aria-hidden className="flex size-[22px] items-center justify-center">
         {icon}
       </span>
-      {label}
+      <span className="flex-1">{label}</span>
+      {!!badge && (
+        <span aria-label={`${badge} demande${badge > 1 ? "s" : ""} en attente`} className="min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-medium text-on-accent">
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

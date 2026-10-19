@@ -12,7 +12,7 @@ npm run db:migrate              # applique db/migrations/*.sql une seule fois ch
 npm run dev
 ```
 
-Sans `RESEND_API_KEY`, le code de connexion s'affiche dans la console du serveur (`npm run dev`).
+Connexion par e-mail et mot de passe : aucun e-mail n'est envoyé. Mettre son adresse dans `ADMIN_EMAILS` pour créer l'espace.
 
 ## Ce qui est en place
 
@@ -22,15 +22,14 @@ Sans `RESEND_API_KEY`, le code de connexion s'affiche dans la console du serveur
 | Règles d'accès | fait | RLS sur toutes les tables ; l'app se connecte en `app_user` (non propriétaire, `rolbypassrls = false`) et pose `app.user_id` par transaction (`src/server/db.ts`) |
 | Test des règles | fait | `npm run db:test` : toutes les migrations dans PGlite, 33 contrôles (privé, teamspaces ouverte/fermée, sous-page restreinte, invité, admin, recherche, boucles) |
 | Tests de bout en bout | fait | `npm run test:e2e` : 74 contrôles dans Chrome contre Neon (pages, glisser-déposer, bases, backend à deux comptes) ; comptes `@e2e.test` supprimés à la fin |
-| Connexion | fait | code à 6 chiffres par e-mail (Better Auth emailOTP), compte créé au premier code, cookie de session http-only, 30 jours |
+| Connexion | fait | e-mail + mot de passe (Better Auth, 8 caractères minimum, essais limités à 10 par minute), cookie de session http-only, 30 jours |
 | Google | prêt, à activer | renseigner `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (client OAuth dans **ta** console Google Cloud, portée e-mail + profil seulement) |
-| E-mails | prêt, à activer | Resend par son API officielle ; il faut `RESEND_API_KEY` et `EMAIL_FROM` sur un domaine vérifié chez Resend |
 | API | fait | `GET /api/bootstrap`, `POST /api/sync` (lots validés par zod, 8 Mo max), `POST /api/workspace` |
 | Conflits d'édition | fait | `content_version` : un contenu écrit sur une version dépassée n'écrase pas le serveur, le client recharge et prévient |
 | Fichiers | fait | stockés dans Neon (`file_blobs`, migration 0005), 10 Mo max, HTML/SVG/scripts refusés ; servis par `/api/files/<id>` après contrôle d'accès (404 sinon), `nosniff`, téléchargement forcé hors images/PDF/médias. Les fichiers importés avant le serveur (`local-file:`) restent lisibles sur leur appareil |
 | Tâches planifiées | fait, actif au déploiement | `/api/cron/purge` (secret `CRON_SECRET`) : pages à la corbeille depuis 30 jours puis fichiers orphelins ; planifiée chaque nuit à 3 h UTC par `vercel.json` |
 | Suppression de compte | fait | Réglages > Supprimer mon compte (confirmation « SUPPRIMER ») ; supprime le compte, le profil, les sessions et les espaces dont on est le seul membre ; refusée si l'on est seul propriétaire d'un espace partagé |
-| Espace de classe sur invitation | fait | seules les adresses ajoutées dans la page Membres (`/admin`) peuvent se connecter (refus avant l'envoi du code, Google compris) ; `ADMIN_EMAILS` liste qui peut créer un espace. Rôles : Lecture seule, Édition, Admin (migration 0006 : `workspace_members.access` plafonne les pages partagées, vérifié par la RLS). Retirer quelqu'un ferme ses sessions ; ses pages privées sont gardées |
+| Espace de classe sur validation | fait | connexion par e-mail et mot de passe (aucun e-mail envoyé, pas de Resend). L'étudiant crée son compte et attend sur `/attente` ; l'enseignant valide la demande en choisissant le rôle (page Membres, `/admin`), ou la refuse (compte supprimé). Adresses pré-autorisées validées d'office. Mot de passe oublié : l'enseignant donne un mot de passe provisoire, changeable dans les réglages. `ADMIN_EMAILS` = enseignant(s), qui créent l'espace. Rôles Lecture seule / Édition / Admin vérifiés par la RLS (migrations 0006, 0007). Retirer quelqu'un ferme ses sessions et bloque sa connexion ; ses pages privées sont gardées |
 | Changements des autres | fait | empreinte de l'espace vérifiée toutes les 5 s (`/api/changes`), rechargement seulement si elle change ; rechargement complet de secours toutes les 60 s. L'édition simultanée d'une même page (curseurs, fusion) reste pour la phase 2 (Yjs) |
 | Sauvegardes | à vérifier | Neon garde un historique de restauration (« restore window ») selon l'offre : vérifier sa durée dans la console |
 
@@ -73,14 +72,13 @@ Limites connues, à reprendre avant d'avoir beaucoup de données ou d'utilisateu
 - [x] fichiers : taille (10 Mo) et type vérifiés côté serveur, servis avec `nosniff`, CSP `sandbox` et téléchargement forcé
 - [x] pas de données personnelles dans les URL ; les erreurs renvoyées au client ne contiennent pas de détail SQL
 - [x] `npm audit --omit=dev` : 0 vulnérabilité (une alerte « high » reste dans les outils de build : `braces`)
-- [ ] politique de confidentialité : à rédiger avant d'ouvrir à d'autres personnes (sous-traitants : Neon, Vercel, Resend, Google si activé)
+- [ ] politique de confidentialité : à rédiger avant d'ouvrir à d'autres personnes (sous-traitants : Neon, Vercel, Google si activé)
 - [ ] mot de passe `neondb_owner` à réinitialiser : il a été partagé dans une conversation
 
 ## Ce que tu dois créer toi-même
 
 | service | quoi | où le mettre |
 | --- | --- | --- |
-| Resend | compte, domaine d'envoi vérifié, clé API | `RESEND_API_KEY`, `EMAIL_FROM` |
 | Google Cloud (facultatif) | client OAuth « application Web », redirection `<url>/api/auth/callback/google` | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 | Vercel | projet relié au dépôt | variables d'environnement du projet (dont `CRON_SECRET`) |
 | Neon | nouveau mot de passe pour `neondb_owner` | `DATABASE_URL_OWNER` |

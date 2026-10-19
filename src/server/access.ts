@@ -1,13 +1,14 @@
 import "server-only";
 import type { PoolClient } from "@neondatabase/serverless";
+import { hashPassword } from "better-auth/crypto";
 import { asOwner } from "./db";
 
 /**
- * Qui peut se connecter : les membres d'un espace, les personnes invitées (invitation en attente),
- * et les adresses de ADMIN_EMAILS (ex. « prof@ecole.fr », ou « @ecole.fr » pour tout un domaine),
- * qui peuvent créer leur espace. Tout le monde d'autre est refusé avant l'envoi du code.
+ * Inscription libre (e-mail + mot de passe), accès sur validation : un compte créé est « en attente »
+ * jusqu'à ce que l'enseignant le valide dans la page Membres. Les adresses de ADMIN_EMAILS
+ * (ex. « prof@ecole.fr », ou « @ecole.fr » pour tout un domaine) sont validées d'office et peuvent créer leur espace.
  */
-export const NOT_ALLOWED = "Cette adresse n'a pas accès à l'espace. Demandez à votre enseignant de vous ajouter.";
+export const REMOVED = "Votre accès à l'espace a été retiré. Contactez votre enseignant.";
 
 function adminRules() {
   return (process.env.ADMIN_EMAILS ?? "")
@@ -21,17 +22,13 @@ export function isAdminEmail(email: string) {
   return adminRules().some((r) => (r.startsWith("@") ? e.endsWith(r) : e === r));
 }
 
-export async function canSignIn(email: string): Promise<boolean> {
+/** Retiré par l'enseignant : ne peut plus ouvrir de session. */
+export async function isRemoved(email: string): Promise<boolean> {
   const e = email.trim().toLowerCase();
-  if (!e) return false;
-  if (isAdminEmail(e)) return true;
+  if (!e || isAdminEmail(e)) return false;
   return asOwner(async (c) => {
-    const r = await c.query(
-      `select exists (select 1 from profiles p join workspace_members m on m.user_id = p.id where lower(p.email) = $1)
-           or exists (select 1 from workspace_invites i where lower(i.email) = $1 and i.accepted_at is null and i.expires_at > now()) as ok`,
-      [e],
-    );
-    return r.rows[0].ok as boolean;
+    const r = await c.query("select 1 from profiles where lower(email) = $1 and access_status = 'removed'", [e]);
+    return (r.rowCount ?? 0) > 0;
   });
 }
 
@@ -54,6 +51,7 @@ async function acceptInvites(c: PoolClient, userId: string, email: string) {
     // Le nom saisi par l'enseignant sert de nom affiché tant que l'étudiant n'en a pas choisi un.
     if (i.name) await c.query("update profiles set name = $2 where id = $1 and name = ''", [userId, i.name]);
   }
+  if (invites.length) await c.query("update profiles set access_status = 'approved' where id = $1", [userId]);
 }
 
 export async function acceptInvitesFor(userId: string) {
@@ -76,6 +74,8 @@ const fromDb = (role: string, access: string): ClassRole | "owner" =>
 
 export type MemberRow = { id: string; name: string; email: string; role: ClassRole | "owner"; you: boolean };
 export type InviteRow = { id: string; name: string; email: string; role: ClassRole; createdAt: string };
+/** Compte créé par un étudiant, en attente de validation. */
+export type RequestRow = { id: string; name: string; email: string; createdAt: string };
 
 export class AccessError extends Error {
   constructor(
@@ -95,7 +95,7 @@ async function managedWorkspace(c: PoolClient, userId: string) {
   return { workspaceId: m.workspace_id as string, callerRole: m.role as "owner" | "admin" };
 }
 
-export async function listMembers(userId: string): Promise<{ members: MemberRow[]; invites: InviteRow[] }> {
+export async function listMembers(userId: string): Promise<{ members: MemberRow[]; invites: InviteRow[]; requests: RequestRow[] }> {
   return asOwner(async (c) => {
     const { workspaceId } = await managedWorkspace(c, userId);
     const members = (
@@ -112,7 +112,8 @@ export async function listMembers(userId: string): Promise<{ members: MemberRow[
         [workspaceId],
       )
     ).rows.map((r) => ({ id: r.id, name: r.name, email: r.email, role: fromDb(r.role, r.access) as ClassRole, createdAt: r.created_at.toISOString() }));
-    return { members, invites };
+    const requests = await pendingRequests(c);
+    return { members, invites, requests };
   });
 }
 
@@ -185,8 +186,97 @@ export async function removeMember(userId: string, target: { memberId?: string; 
     if (target.memberId === userId) throw new AccessError(403, "Vous ne pouvez pas vous retirer vous-même.");
     if (m.role === "admin" && callerRole !== "owner") throw new AccessError(403, "Seul le propriétaire peut retirer un admin.");
     await c.query("delete from workspace_members where workspace_id = $1 and user_id = $2", [workspaceId, target.memberId]);
-    // Plus aucun espace : la session est fermée (il ne pourra plus se reconnecter, voir canSignIn).
+    // Plus aucun espace : le compte passe « retiré » et la session est fermée (voir isRemoved).
     const left = await c.query("select 1 from workspace_members where user_id = $1", [target.memberId]);
-    if (!left.rowCount) await c.query(`delete from "session" where "userId" = $1`, [target.memberId]);
+    if (!left.rowCount) {
+      await c.query("update profiles set access_status = 'removed' where id = $1", [target.memberId]);
+      await c.query(`delete from "session" where "userId" = $1`, [target.memberId]);
+    }
   });
+}
+
+/* ------------------------------------------------------ demandes d'accès */
+
+async function pendingRequests(c: PoolClient): Promise<RequestRow[]> {
+  return (
+    await c.query(
+      `select p.id, p.name, p.email, p.created_at from profiles p
+        where p.access_status = 'pending' and not exists (select 1 from workspace_members m where m.user_id = p.id)
+        order by p.created_at`,
+    )
+  ).rows
+    .filter((r) => !isAdminEmail(r.email))
+    .map((r) => ({ id: r.id, name: r.name, email: r.email, createdAt: r.created_at.toISOString() }));
+}
+
+/** Nombre de demandes en attente, pour le badge de la page Membres (propriétaire et admins seulement). */
+export async function pendingCount(userId: string): Promise<number> {
+  return asOwner(async (c) => {
+    try {
+      await managedWorkspace(c, userId);
+    } catch {
+      return 0;
+    }
+    return (await pendingRequests(c)).length;
+  });
+}
+
+/** Valide une demande : l'étudiant rejoint l'espace avec le rôle choisi. */
+export async function approveRequest(userId: string, requestId: string, newRole: ClassRole) {
+  return asOwner(async (c) => {
+    const { workspaceId, callerRole } = await managedWorkspace(c, userId);
+    if (newRole === "admin" && callerRole !== "owner") throw new AccessError(403, "Seul le propriétaire peut nommer un admin.");
+    const p = (await c.query("select id from profiles where id = $1 and access_status = 'pending'", [requestId])).rows[0];
+    if (!p) throw new AccessError(404, "Demande introuvable (déjà traitée ?).");
+    const { role, access } = toDb(newRole);
+    await c.query(
+      `insert into workspace_members (workspace_id, user_id, role, access) values ($1, $2, $3, $4)
+       on conflict (workspace_id, user_id) do update set role = excluded.role, access = excluded.access`,
+      [workspaceId, requestId, role, access],
+    );
+    await c.query("update profiles set access_status = 'approved' where id = $1", [requestId]);
+  });
+}
+
+/** Refuse une demande : le compte est supprimé (la personne pourra refaire une demande). */
+export async function refuseRequest(userId: string, requestId: string) {
+  return asOwner(async (c) => {
+    await managedWorkspace(c, userId);
+    const r = await c.query(
+      `delete from "user" u using profiles p
+        where u.id = p.id and p.id = $1 and p.access_status = 'pending'
+          and not exists (select 1 from workspace_members m where m.user_id = p.id)`,
+      [requestId],
+    );
+    if (!r.rowCount) throw new AccessError(404, "Demande introuvable (déjà traitée ?).");
+  });
+}
+
+/* ------------------------------------------------- mot de passe provisoire */
+
+/** Mot de passe facile à dicter : sans caractères ambigus (0/O, 1/l/I). */
+function temporaryPassword() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("");
+}
+
+/**
+ * Mot de passe oublié (pas d'e-mail) : l'enseignant donne un mot de passe provisoire à l'étudiant,
+ * qui le change ensuite dans ses réglages. Ses sessions ouvertes sont fermées.
+ */
+export async function resetMemberPassword(userId: string, memberId: string): Promise<{ password: string }> {
+  const password = temporaryPassword();
+  const hash = await hashPassword(password);
+  await asOwner(async (c) => {
+    const { workspaceId, callerRole } = await managedWorkspace(c, userId);
+    const m = (await c.query("select role from workspace_members where workspace_id = $1 and user_id = $2", [workspaceId, memberId])).rows[0];
+    if (!m) throw new AccessError(404, "Membre introuvable.");
+    if (memberId === userId) throw new AccessError(403, "Changez votre propre mot de passe dans les réglages.");
+    if (m.role === "owner" || (m.role === "admin" && callerRole !== "owner")) throw new AccessError(403, "Vous ne pouvez pas changer le mot de passe de cette personne.");
+    const r = await c.query(`update "account" set password = $2, "updatedAt" = now() where "userId" = $1 and "providerId" = 'credential'`, [memberId, hash]);
+    if (!r.rowCount) throw new AccessError(409, "Cette personne se connecte avec Google : pas de mot de passe à réinitialiser.");
+    await c.query(`delete from "session" where "userId" = $1`, [memberId]);
+  });
+  return { password };
 }

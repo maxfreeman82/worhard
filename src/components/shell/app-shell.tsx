@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Skeleton, ToastProvider, useToast } from "@/components/ui/display";
 import { TooltipProvider } from "@/components/ui/overlay";
-import { onSyncEvent, useSession, useTheme } from "@/lib/data";
+import { destination, onSyncEvent, useSession, useTheme } from "@/lib/data";
 import { MoveModal, SearchModal, SettingsModal, TemplatesModal, TrashModal } from "./modals";
 import { ShellCtx, type ShellApi, type ShellModal } from "./shell-context";
 import { Sidebar } from "./sidebar";
@@ -62,9 +62,9 @@ function Guarded({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!ready) return;
-    if (!signedIn) router.replace("/login");
-    else if (!hasWorkspace) router.replace("/onboarding");
-  }, [ready, signedIn, hasWorkspace, router]);
+    // Pas de session, pas encore validé, ou espace à créer : vers la bonne page.
+    if (session && (!signedIn || !hasWorkspace)) router.replace(destination(session));
+  }, [ready, signedIn, hasWorkspace, router, session]);
 
   if (!ready || !signedIn || !hasWorkspace) return <ShellSkeleton />;
   return <Shell>{children}</Shell>;

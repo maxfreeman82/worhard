@@ -28,6 +28,14 @@ export {
   updateRowProp,
   updateView,
   addMember,
+  approveRequest,
+  changePassword,
+  destination,
+  recheckAccess,
+  refuseRequest,
+  resetMemberPassword,
+  signInWithPassword,
+  signUpWithPassword,
   listMembers,
   removeMember,
   setMemberRole,
@@ -45,7 +53,6 @@ export {
   resetEverything,
   resolveFileUrl,
   savePageContent,
-  sendLoginCode,
   setTrash,
   signOut,
   toggleFavorite,
@@ -53,7 +60,6 @@ export {
   updateProfile,
   updateWorkspace,
   uploadFile,
-  verifyLoginCode,
 } from "./local";
 export { blocksToText } from "./text";
 
