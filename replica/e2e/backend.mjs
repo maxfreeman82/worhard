@@ -15,7 +15,8 @@ let fail = 0;
 const check = (ok, msg) => { if (!ok) fail++; console.log(ok ? "ok  " : "FAIL", msg); };
 const watch = (p, who) => {
   p.on("pageerror", (e) => errors.push(`${who} pageerror: ${e.message}`));
-  p.on("console", (m) => m.type() === "error" && !/401|Unauthorized/.test(m.text()) && errors.push(`${who}: ${m.text()}`));
+  // 401 : sans session ; 413 : fichier trop lourd (refus attendu) ; 503 : panne simulée par le test (voir « Panne passagère »).
+  p.on("console", (m) => m.type() === "error" && !/401|413|503|Unauthorized/.test(m.text()) && errors.push(`${who}: ${m.text()}`));
 };
 const title = (p) => p.locator('textarea[aria-label="Titre de la page"]:visible');
 const editor = (p) => p.locator(".page-editor .bn-editor:visible");
@@ -42,8 +43,11 @@ const pageId = pageUrl.split("/p/")[1];
 await editor(a).waitFor();
 await title(a).fill("Secret de A");
 await a.keyboard.press("Enter");
-await a.keyboard.type("Code du coffre : 4521");
-await a.waitForTimeout(1500);
+// On attend que le serveur ait confirmé l'enregistrement du texte avant de recharger.
+await Promise.all([
+  a.waitForResponse((r) => r.url().includes("/api/sync") && r.ok() && (r.request().postData() ?? "").includes("Code du coffre : 4521")),
+  a.keyboard.type("Code du coffre : 4521"),
+]);
 
 // Rechargement : tout vient du serveur
 await a.goto(pageUrl);
@@ -60,6 +64,23 @@ check(await editor(a).getByText("Code du coffre : 4521").isVisible(), "A : conte
   const again = await (await a.request.get(base + "/api/bootstrap")).json();
   check(again.pages.find((p) => p.id === pageId)?.title === "Secret de A (bis)", "contenu inchangé renvoyé : le nouveau titre est enregistré");
   await a.request.post(base + "/api/sync", { data: { workspaceId: boot.workspace.id, pages: [{ ...pg, title: "Secret de A" }] } });
+}
+
+// Panne passagère du serveur pendant l'enregistrement : rien n'est perdu, l'envoi est refait tout seul.
+{
+  await a.goto(pageUrl);
+  await editor(a).waitFor();
+  let failures = 0;
+  await a.route("**/api/sync", (route) => (failures < 2 ? (failures++, route.fulfill({ status: 503, body: "{}" })) : route.continue()));
+  await editor(a).getByText("Code du coffre : 4521").click();
+  await a.keyboard.press("End");
+  await a.keyboard.type(" (ajouté pendant la panne)");
+  await a.waitForTimeout(8000);
+  await a.unroute("**/api/sync");
+  const boot = await (await a.request.get(base + "/api/bootstrap")).json();
+  const saved = boot.pages.find((p) => p.id === pageId)?.contentText ?? "";
+  check(failures === 2 && saved.includes("(ajouté pendant la panne)"), `panne passagère : 2 envois refusés (503), puis la modification est enregistrée (${failures} échecs)`);
+  check(await editor(a).getByText("Code du coffre : 4521 (ajouté pendant la panne)").isVisible(), "panne passagère : le texte tapé reste à l'écran");
 }
 
 // Base de données : un changement de statut est enregistré
@@ -148,10 +169,15 @@ const html = await ctxA.request.post(base + "/api/files", {
   multipart: { workspaceId: bootA.workspace.id, file: { name: "piege.html", mimeType: "text/html", buffer: Buffer.from("<script>alert(1)</script>") } },
 });
 check(html.status() === 400, `fichier HTML : refusé (${html.status()})`);
-const big = await ctxA.request.post(base + "/api/files", {
-  multipart: { workspaceId: bootA.workspace.id, file: { name: "gros.bin", mimeType: "application/octet-stream", buffer: Buffer.alloc(11 * 1024 * 1024) } },
-});
-check(big.status() === 413 || big.status() === 400, `fichier de 11 Mo : refusé (${big.status()})`);
+// Envoyé par le navigateur, comme dans l'app : le serveur refuse avant d'avoir tout reçu, et le navigateur
+// arrête alors l'envoi (le client de requêtes de Playwright, lui, restait parfois bloqué dans ce cas).
+const bigStatus = await a.evaluate(async (ws) => {
+  const form = new FormData();
+  form.append("workspaceId", ws);
+  form.append("file", new Blob([new Uint8Array(11 * 1024 * 1024)]), "gros.bin");
+  return (await fetch("/api/files", { method: "POST", body: form })).status;
+}, bootA.workspace.id);
+check(bigStatus === 413 || bigStatus === 400, `fichier de 11 Mo : refusé (${bigStatus})`);
 const fileB = await ctxB.request.get(base + upBody.url);
 check(fileB.status() === 404, `B : le fichier de A est introuvable pour lui (${fileB.status()})`);
 const fileAnon = await anon.request.get(base + upBody.url);

@@ -143,7 +143,8 @@ async function refresh(force = false): Promise<boolean> {
   const startVersion = version;
   try {
     const res = await fetch("/api/bootstrap", { cache: "no-store" });
-    if (!force && ready && (version !== startVersion || timer || flushing)) return false;
+    // Des modifications pas encore enregistrées (en attente d'un nouvel essai) ne doivent pas être écrasées.
+    if (!force && ready && (version !== startVersion || timer || flushing || retryTimer || diff())) return false;
     const b: BootstrapResponse | { signedIn: false } = res.ok ? await res.json() : null;
     if (res.status === 401 || (b && "signedIn" in b && b.signedIn === false)) {
       state = empty();
@@ -180,7 +181,7 @@ async function refresh(force = false): Promise<boolean> {
 
 /** Quelqu'un d'autre (ou un autre appareil) a-t-il modifié l'espace ? Si oui, on recharge. */
 async function checkChanges() {
-  if (!state.signedIn || !state.workspace || flushing || timer || document.visibilityState !== "visible") return;
+  if (!state.signedIn || !state.workspace || flushing || timer || retryTimer || document.visibilityState !== "visible") return;
   try {
     const res = await fetch(`/api/changes?workspace=${state.workspace.id}`, { cache: "no-store" });
     if (!res.ok) return;
@@ -217,6 +218,11 @@ let flushing = false;
 let again = false;
 /** Ce qu'aura le serveur une fois le lot en cours écrit (null si aucun lot en cours). */
 let inflight: typeof synced | null = null;
+/** Nouvel essai après une panne passagère : délai croissant (1 s, 2 s, 4 s… jusqu'à 30 s). */
+const RETRY_MIN_MS = 1_000;
+const RETRY_MAX_MS = 30_000;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryDelay = 0;
 
 /** Applique une modification : visible tout de suite, envoyée au serveur peu après (par lot). */
 function commit() {
@@ -278,8 +284,9 @@ async function flush(): Promise<void> {
       keepalive: JSON.stringify(changes).length < 60_000,
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ?? "Enregistrement impossible.");
+    if (!res.ok) throw Object.assign(new Error(body.error ?? "Enregistrement impossible."), { status: res.status });
     synced = inflight;
+    retryDelay = 0;
     inflight = null;
     // Nos propres écritures ne doivent pas déclencher de rechargement.
     if (body.fingerprint) lastFingerprint = body.fingerprint;
@@ -291,10 +298,25 @@ async function flush(): Promise<void> {
       return;
     }
   } catch (e) {
-    notify({ kind: "error", message: `${e instanceof Error ? e.message : "Enregistrement impossible."} Les données du serveur ont été rechargées.` });
     inflight = null;
     flushing = false;
     again = false;
+    // Panne passagère (réseau coupé, serveur ou base momentanément indisponibles, trop de requêtes) :
+    // rien n'est perdu, les modifications restent ici et repartent un peu plus tard.
+    const status = (e as { status?: number }).status;
+    if (status === undefined || status >= 500 || status === 429) {
+      if (!retryDelay) notify({ kind: "error", message: "Connexion au serveur perdue : vos modifications seront renvoyées automatiquement." });
+      retryDelay = Math.min(retryDelay ? retryDelay * 2 : RETRY_MIN_MS, RETRY_MAX_MS);
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void flush();
+      }, retryDelay);
+      return;
+    }
+    // Refus du serveur (droits, données invalides) : on revient à ce qu'il a enregistré.
+    retryDelay = 0;
+    notify({ kind: "error", message: `${e instanceof Error ? e.message : "Enregistrement impossible."} Les données du serveur ont été rechargées.` });
     await refresh(true);
     return;
   }

@@ -11,6 +11,10 @@ const page = await ctx.newPage();
 const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+const t0 = Date.now();
+const net = [];
+page.on('response', (r) => r.url().includes('/api/') && net.push(`${Date.now() - t0} ms ${r.status()} ${r.request().method()} ${r.url().replace(base, '')}`));
+page.on('console', (m) => net.push(`${Date.now() - t0} ms console ${m.type()} ${m.text().slice(0, 150)}`));
 let fail = 0;
 const check = (ok, msg) => { if (!ok) fail++; console.log(ok ? 'ok  ' : 'FAIL', msg); };
 const shot = (name) => page.screenshot({ path: `${out}/${name}.png` });
@@ -30,7 +34,12 @@ await page.keyboard.press('Control+k');
 await page.getByLabel('Rechercher une page').fill('suivi des taches');
 await page.keyboard.press('Enter');
 await page.waitForURL('**/p/**');
-await db().waitFor();
+// Diagnostic si la base n'apparaît pas : capture et derniers échanges avec le serveur.
+if (!(await db().waitFor().then(() => true, () => false))) {
+  await shot('ECHEC-base-absente');
+  console.log('URL :', page.url(), '\nTexte :', (await page.locator('body').innerText()).slice(0, 500), '\nRéseau :\n' + net.slice(-25).join('\n'));
+  throw new Error('base de données absente (voir ECHEC-base-absente.png)');
+}
 check((await bodyRows().count()) === 5, `S16 tableau : 5 lignes d'exemple (${await bodyRows().count()})`);
 check(await V(page.getByText('TÂCHE-1')).first().isVisible(), 'ID unique avec préfixe');
 await page.waitForTimeout(300);
